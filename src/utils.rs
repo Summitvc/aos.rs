@@ -20,7 +20,13 @@ pub fn ip(address: &str) -> Result<Vec<String>, Error> {
         }
     };
 
-    addr_split[0] = format!("{}.{}.{}.{}", ip & 255, (ip >> 8) & 255, (ip >> 16) & 255, (ip >> 24) & 255);
+    addr_split[0] = format!(
+        "{}.{}.{}.{}",
+        ip & 255,
+        (ip >> 8) & 255,
+        (ip >> 16) & 255,
+        (ip >> 24) & 255
+    );
 
     Ok(addr_split)
 }
