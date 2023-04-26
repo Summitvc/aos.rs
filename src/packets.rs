@@ -10,9 +10,9 @@ pub const MAPCACHED: u8 = 31;
 
 #[derive(Clone, Debug, Default)]
 pub struct Coordinates {
-    pub x: u32,
-    pub y: u32,
-    pub z: u32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -52,42 +52,8 @@ pub struct Player {
     pub team: i8,
 }
 
-impl Player{
-    pub fn new() -> Player {
-        Player {
-            name: "".to_owned(),
-            playerid: 0,
-            kills: 0,
-            position: Coordinates { x: 0, y: 0, z: 0 },
-            orientation: Coordinates { x: 0, y: 0, z: 0 },
-            inputs: Inputs {
-                up: false,
-                down: false,
-                left: false,
-                right: false,
-                jump: false,
-                crouch: false,
-                sneak: false,
-                sprint: false,
-            },
-            blockcolor: Color {
-                red: 0,
-                green: 0,
-                blue: 0,
-            },
-            weapon: 0,
-            weaponclip: 0,
-            weaponreserve: 0,
-            firing: false,
-            tool: 0,
-            blocks: 0,
-            dead: false,
-            team: 0,
-        }
-    }
-}
 //Existing player
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ExistingPlayer {
     pub playerid: u8,
     pub team: i8,
@@ -117,22 +83,74 @@ impl ExistingPlayer {
 
         return buf;
     }
+    pub fn deserialize(bytes: &[u8], player: &mut Player) {
+        //shifted by 1 index to right due to id
+        let playerid = bytes[1];
+        // let team = bytes[2] as i8;
+        let weapon = bytes[3];
+        // let helditem = bytes[4];
+        let kills = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
+        // let blue = bytes[9];
+        // let green = bytes[10];
+        // let red = bytes[11];
+        let name: String = String::from_utf8_lossy(&bytes[12..]).into_owned();
+
+        player.name = name;
+        player.playerid = playerid;
+        player.kills = kills;
+        player.weapon = weapon;
+    }
 }
 
-pub fn deserialize_ep(bytes: &[u8], player: &mut Player) {
-    //shifted by 1 index to right due to id
-    let playerid = bytes[1];
-    // let team = bytes[2] as i8;
-    let weapon = bytes[3];
-    // let helditem = bytes[4];
-    let kills = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
-    // let blue = bytes[9];
-    // let green = bytes[10];
-    // let red = bytes[11];
-    let name: String = String::from_utf8_lossy(&bytes[12..]).into_owned();
+#[derive(Default)]
+pub struct WorldUpdate {
+    // posx: f32,
+    // posy: f32,
+    // posz: f32,
+    // orix: f32,
+    // oriy: f32,
+    // oriz: f32,
+}
 
-    player.name = name;
-    player.playerid = playerid;
-    player.kills = kills;
-    player.weapon = weapon;
+impl WorldUpdate {
+    pub fn deserialize(&self, bytes: &[u8], players: &mut Vec<Player>) {
+        let mut id = 0;
+        let mut index = 1;
+        let mut buf: Vec<u8> = Vec::new();
+
+        if let Some((_, remaining)) = bytes.split_first() {
+            for item in remaining {
+                buf.push(*item);
+                if buf.len() == 24 {
+                    let chop = buf.chunks_exact(4);
+                    for i in chop {
+                        let vec = i.to_vec();
+                        let mut iter = vec.into_iter();
+                        let f: [u8; 4] = {
+                            [
+                                iter.next().unwrap_or(0),
+                                iter.next().unwrap_or(0),
+                                iter.next().unwrap_or(0),
+                                iter.next().unwrap_or(0),
+                            ]
+                        };
+
+                        match index {
+                            1 => players[id].position.x = f32::from_le_bytes(f),
+                            2 => players[id].position.y = f32::from_le_bytes(f),
+                            3 => players[id].position.z = f32::from_le_bytes(f),
+                            4 => players[id].orientation.x = f32::from_le_bytes(f),
+                            5 => players[id].orientation.y = f32::from_le_bytes(f),
+                            6 => players[id].orientation.z = f32::from_le_bytes(f),
+                            _ => println!("error at matching index at worldupdate::deserialize()"),
+                        }
+                        index += 1;
+                    }
+                    index = 1;
+                    buf.clear();
+                    id += 1;
+                }
+            }
+        }
+    }
 }
