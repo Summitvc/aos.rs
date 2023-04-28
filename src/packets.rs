@@ -83,7 +83,7 @@ impl ExistingPlayer {
 
         return buf;
     }
-    pub fn deserialize(bytes: &[u8], player: &mut Player) {
+    pub fn deserialize(bytes: &[u8], players: &mut Vec<Player>) {
         //shifted by 1 index to right due to id
         let playerid = bytes[1];
         // let team = bytes[2] as i8;
@@ -95,10 +95,10 @@ impl ExistingPlayer {
         // let red = bytes[11];
         let name: String = String::from_utf8_lossy(&bytes[12..]).into_owned();
 
-        player.name = name;
-        player.playerid = playerid;
-        player.kills = kills;
-        player.weapon = weapon;
+        players[playerid as usize].name = name;
+        players[playerid as usize].playerid = playerid;
+        players[playerid as usize].kills = kills;
+        players[playerid as usize].weapon = weapon;
     }
 }
 
@@ -113,7 +113,7 @@ pub struct WorldUpdate {
 }
 
 impl WorldUpdate {
-    pub fn deserialize(&self, bytes: &[u8], players: &mut Vec<Player>) {
+    pub fn deserialize(bytes: &[u8], players: &mut Vec<Player>) {
         let mut id = 0;
         let mut index = 1;
         let mut buf: Vec<u8> = Vec::new();
