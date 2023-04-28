@@ -65,6 +65,26 @@ pub struct ExistingPlayer {
     pub red: u8,
     pub name: String,
 }
+pub struct ChatMessage{
+    pub playerid: u8,
+    pub chattype: u8,
+    pub chatmessage: String,
+}
+
+impl ChatMessage{
+    // pub fn serialize(&self, message: String) -> Vec<u8>{
+    //     let mut buf: Vec<u8> = Vec::new();
+        
+    // }
+    pub fn deserialize(bytes: &[u8]) -> String{
+        let mut buf = bytes.to_vec();
+
+        buf.remove(0);
+        buf.remove(1);
+
+        return String::from_utf8(buf).unwrap();
+    }
+}
 
 impl ExistingPlayer {
     pub fn serialize(&self, name: String) -> Vec<u8> {

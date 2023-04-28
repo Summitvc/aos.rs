@@ -1,6 +1,5 @@
 mod packets;
 mod utils;
-mod client;
 
 use std::ffi::{c_void, CString};
 use std::ptr::{null, null_mut};
@@ -8,7 +7,7 @@ use std::ptr::{null, null_mut};
 use enet_sys::*;
 use enet_sys::{self, enet_initialize};
 
-use crate::packets::{ExistingPlayer, WorldUpdate, Player};
+use crate::packets::{ExistingPlayer, WorldUpdate,};
 
 fn main() {
     unsafe {
@@ -64,7 +63,7 @@ fn main() {
         }
 
         loop {
-            let conn = enet_host_service(client, &mut event, 5000);
+            let conn = enet_host_service(client, &mut event, 0);
 
             match conn {
                 0 => {}
@@ -93,6 +92,8 @@ fn main() {
                                 WorldUpdate::deserialize(data, &mut players);
                             }
 
+                            
+
                             packets::KILLACTION => println!("Kill Action"),
                             packets::CHATMESSAGE => println!("Chat Message"),
                             packets::MAPSTART => println!("Map Start"),
@@ -100,7 +101,7 @@ fn main() {
                             packets::MAPCACHED => println!("Map Cached"),
                             3 => {}
                             _ => {
-                                println!("unknown packet: {:?}", data[0])
+                                // println!("unknown packet: {:?}", data[0])
                             }
                         }
                         enet_packet_destroy(event.packet);

@@ -1,8 +1,9 @@
-use crate::packets::{self, ExistingPlayer, WorldUpdate};
+use crate::packets::{self, ExistingPlayer, WorldUpdate, ChatMessage};
 use crate::packets::Player;
 use crate::utils;
 
 use std::ffi::{c_void, CString};
+use std::fmt::Error;
 use std::ptr::{null, null_mut};
 
 use enet_sys::*;
@@ -80,7 +81,9 @@ impl Client{
 
             let mut exps: Vec<u8> = ExistingPlayer::serialize(&Default::default(), name.clone());
             let exps_ptr: *const c_void = exps.as_mut_ptr() as *mut c_void;
-
+            
+            println!("Connecting...");
+            
             Client { 
                 client, 
                 peer, 
@@ -99,7 +102,7 @@ impl Client{
         unsafe{
                 let conn = enet_host_service(self.client, &mut self.event, 0);
                 match conn {
-                    0 => {}
+                    0 => {self.data = [].to_vec()}
                     1 => match self.event.type_ {
                         _ENetEventType_ENET_EVENT_TYPE_RECEIVE => {
                             let data = std::slice::from_raw_parts(
@@ -126,14 +129,14 @@ impl Client{
                                 }
                                 _ => {
                                     self.data = data.to_vec();
+                                    enet_packet_destroy(self.event.packet);
                                 }
                             }
-                            enet_packet_destroy(self.event.packet);
                         }
                         _ => {
-                            println!("undefined packet type: {:?}", self.event.type_);
+                            // println!("undefined packet type: {:?}", self.event.type_);
                         }
-                    },
+                    }
                     _ => {
                         println!("Error servicing ENet: {:?}", conn);
                     }
