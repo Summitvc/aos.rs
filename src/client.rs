@@ -1,9 +1,8 @@
-use crate::packets::{self, ExistingPlayer, WorldUpdate, ChatMessage};
+use crate::packets::{self, ExistingPlayer, WorldUpdate};
 use crate::packets::Player;
 use crate::utils;
 
 use std::ffi::{c_void, CString};
-use std::fmt::Error;
 use std::ptr::{null, null_mut};
 
 use enet_sys::*;
@@ -21,8 +20,8 @@ pub struct Client{
     pub game: Game,
     pub name: String,
     pub data: Vec<u8>,
-    pub exps: Vec<u8>,
-    pub exps_ptr: *const c_void
+    pub statedata: packets::StateData,
+    pub chat_log: bool,
 }
 
 
@@ -79,8 +78,9 @@ impl Client{
 
             let data = Vec::new();
 
-            let mut exps: Vec<u8> = ExistingPlayer::serialize(&Default::default(), name.clone());
-            let exps_ptr: *const c_void = exps.as_mut_ptr() as *mut c_void;
+            let statedata: packets::StateData = Default::default();
+
+            let chat_log = false;
             
             println!("Connecting...");
             
@@ -92,8 +92,8 @@ impl Client{
                 game,
                 name,
                 data,
-                exps,
-                exps_ptr
+                statedata,
+                chat_log,
             }
         }
     }
@@ -112,20 +112,39 @@ impl Client{
     
                             match data[0] {
                                 packets::STATEDATA => {
-                                    let new_packet = enet_packet_create(
-                                        self.exps_ptr,
-                                        self.exps.len() as u64,
-                                        _ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE,
-                                    );
-                                    enet_peer_send(self.peer, 0, new_packet);
+                                    packets::StateData::deserialize_join(&mut self.statedata, 
+                                        data, 
+                                        self.name.clone(), 
+                                        self.peer, 
+                                        &mut self.game.players);
+
+                                    self.data = data.to_vec();
                                 }
     
                                 packets::EXISTINGPLAYER => {
                                     ExistingPlayer::deserialize(data, &mut self.game.players);
+                                    self.data = data.to_vec();
                                 }
-    
+                                
                                 packets::WORLDUPDATE => {
                                     WorldUpdate::deserialize(data, &mut self.game.players);
+                                    self.data = data.to_vec();
+                                }
+                                packets::CHATMESSAGE => {
+                                    if self.chat_log == true{
+                                        if data[1] <= 32{
+                                            println!("{}: {}", 
+                                            self.game.players[data[1] as usize].name,
+                                            packets::ChatMessage::deserialize(data).chatmessage);
+                                        }
+                                        else{
+                                            println!("{}", packets::ChatMessage::deserialize(data).chatmessage);
+                                        }
+                                    }
+                                    else{
+
+                                    }
+                                    self.data = data.to_vec();
                                 }
                                 _ => {
                                     self.data = data.to_vec();
@@ -141,6 +160,11 @@ impl Client{
                         println!("Error servicing ENet: {:?}", conn);
                     }
                 }
+            }
+        }
+        pub fn disconnect(&self){
+            unsafe{
+                enet_peer_disconnect(self.peer, 0);
             }
         }
     }

@@ -1,3 +1,7 @@
+use std::ffi::c_void;
+
+use enet_sys::*;
+
 pub const WORLDUPDATE: u8 = 2;
 pub const EXISTINGPLAYER: u8 = 9;
 pub const CREATEPLAYER: u8 = 12;
@@ -52,7 +56,23 @@ pub struct Player {
     pub team: i8,
 }
 
-//Existing player
+#[derive(Debug, Default)]
+pub struct StateData{
+    pub localplayerid: u8,
+    pub fog_b: u8,
+    pub fog_g: u8,
+    pub fog_r: u8,
+    pub team1_b: u8,
+    pub team1_g: u8,
+    pub team1_r: u8,
+    pub team2_b: u8,
+    pub team2_g: u8,
+    pub team2_r: u8,
+    pub team1name: String,
+    pub team2name: String,
+    pub gamemode: u8,
+}
+
 #[derive(Debug, Default)]
 pub struct ExistingPlayer {
     pub playerid: u8,
@@ -65,24 +85,71 @@ pub struct ExistingPlayer {
     pub red: u8,
     pub name: String,
 }
+#[derive(Default)]
 pub struct ChatMessage{
     pub playerid: u8,
     pub chattype: u8,
     pub chatmessage: String,
 }
 
-impl ChatMessage{
-    // pub fn serialize(&self, message: String) -> Vec<u8>{
-    //     let mut buf: Vec<u8> = Vec::new();
-        
-    // }
-    pub fn deserialize(bytes: &[u8]) -> String{
-        let mut buf = bytes.to_vec();
+impl StateData{
+    pub fn deserialize_join(&mut self, bytes: &[u8], name: String, peer: *mut _ENetPeer, players: &mut Vec<Player>){
+        let mut buf:Vec<u8> = bytes.to_vec();
 
         buf.remove(0);
-        buf.remove(1);
 
-        return String::from_utf8(buf).unwrap();
+        self.localplayerid = buf[0];
+        self.fog_b = buf[1];
+        self.fog_g = buf[2];
+        self.fog_r = buf[3];
+        self.team1_b = buf[4];
+        self.team1_g = buf[5];
+        self.team1_r = buf[6];
+        self.team2_b = buf[7];
+        self.team2_g = buf[8];
+        self.team2_r = buf[9];
+        self.team1name = String::from_utf8(buf[10..20].try_into().unwrap()).unwrap();
+        self.team2name = String::from_utf8(buf[20..30].try_into().unwrap()).unwrap();   
+
+        players[self.localplayerid as usize].playerid = self.localplayerid;
+        players[self.localplayerid as usize].name = name.clone();
+
+        let mut exps: Vec<u8> = ExistingPlayer::serialize(&Default::default(), name.clone());
+        let exps_ptr: *const c_void = exps.as_mut_ptr() as *mut c_void;
+
+        unsafe{
+            let new_packet = enet_packet_create(
+                exps_ptr,
+                exps.len() as u64,
+                _ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE
+            );
+            
+            enet_peer_send(peer, 0, new_packet);   
+        }
+    }
+}
+
+impl ChatMessage{
+    pub fn send(peer: *mut _ENetPeer, localplayerid: u8, message: String){
+        let mut buf: Vec<u8> = Vec::new();
+
+        buf.push(CHATMESSAGE);
+        buf.push(localplayerid);
+        buf.push(0); // - global
+        buf.append(&mut message.as_bytes().to_vec());
+        buf.push(0);
+
+        let message_ptr: *const c_void = buf.as_mut_ptr() as *mut c_void;
+        unsafe{
+            let packet = enet_packet_create(message_ptr, buf.len() as u64, _ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE);
+            enet_peer_send(peer, 0, packet);
+        }
+
+    }
+    pub fn deserialize(bytes: &[u8]) -> ChatMessage{
+        let buf = bytes[3..bytes.len()-1].to_vec();
+
+        ChatMessage { playerid: bytes[1], chattype: bytes[2], chatmessage: String::from_utf8_lossy(&buf).to_string()}
     }
 }
 
