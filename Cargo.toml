@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 enet-sys = "1.0.1"
+tokio = "1.28.0"

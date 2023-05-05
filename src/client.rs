@@ -1,12 +1,15 @@
-use crate::packets::{self, ExistingPlayer, WorldUpdate};
-use crate::packets::Player;
+use crate::packets::*;
 use crate::utils;
 
-use std::ffi::{c_void, CString};
+use std::ffi::{CString};
 use std::ptr::{null, null_mut};
 
 use enet_sys::*;
 use enet_sys::{self, enet_initialize};
+
+pub const SPECTATOR: i8 = -1;
+pub const BLUE: i8 = 0;
+pub const GREEN: i8 = 1;
 
 pub struct Game{
     pub players: Vec<Player>,
@@ -19,14 +22,16 @@ pub struct Client{
     pub packet: _ENetPacket,
     pub game: Game,
     pub name: String,
+    pub localplayerid: u8,
+    pub team: i8,
     pub data: Vec<u8>,
-    pub statedata: packets::StateData,
+    pub statedata: StateData,
     pub chat_log: bool,
 }
 
 
 impl Client{
-    pub fn init(ip: &str, name: String) -> Self{
+    pub fn init(ip: &str, name: String, team: i8) -> Self{
         unsafe{
             enet_initialize();
             let raw_address = utils::ip(ip).unwrap();
@@ -44,7 +49,7 @@ impl Client{
                 freeCallback: None,
                 userData: std::ptr::null_mut(),
             };
-            let mut event: _ENetEvent = ENetEvent {
+            let event: _ENetEvent = ENetEvent {
                 type_: 0,
                 peer: null_mut(),
                 channelID: 0,
@@ -71,15 +76,12 @@ impl Client{
             }
 
             let players: Vec<Player> = vec![Default::default(); 32];
-
             let game = Game{
                 players
             };
-
             let data = Vec::new();
-
-            let statedata: packets::StateData = Default::default();
-
+            let statedata: StateData = Default::default();
+            let localplayerid = 0;
             let chat_log = false;
             
             println!("Connecting...");
@@ -91,6 +93,8 @@ impl Client{
                 packet,
                 game,
                 name,
+                localplayerid,
+                team,
                 data,
                 statedata,
                 chat_log,
@@ -111,46 +115,59 @@ impl Client{
                             );
     
                             match data[0] {
-                                packets::STATEDATA => {
-                                    packets::StateData::deserialize_join(&mut self.statedata, 
-                                        data, 
-                                        self.name.clone(), 
-                                        self.peer, 
-                                        &mut self.game.players);
+                                STATEDATA => {
+                                    StateData::deserialize(&mut self.statedata, &mut self.localplayerid, data);
+
+                                    join(self.peer, self.name.clone(), self.team);
 
                                     self.data = data.to_vec();
                                 }
     
-                                packets::EXISTINGPLAYER => {
+                                EXISTINGPLAYER => {
                                     ExistingPlayer::deserialize(data, &mut self.game.players);
+
                                     self.data = data.to_vec();
                                 }
                                 
-                                packets::WORLDUPDATE => {
+                                WORLDUPDATE => {
                                     WorldUpdate::deserialize(data, &mut self.game.players);
+
                                     self.data = data.to_vec();
                                 }
-                                packets::CHATMESSAGE => {
+                                CHATMESSAGE => {
                                     if self.chat_log == true{
+                                        let fields = ChatMessage::deserialize(data);
                                         if data[1] <= 32{
-                                            println!("{}: {}", 
-                                            self.game.players[data[1] as usize].name,
-                                            packets::ChatMessage::deserialize(data).chatmessage);
+                                            println!("{} {}: {}",
+                                            fields.playerid,
+                                            self.game.players[fields.playerid as usize].name,
+                                            fields.chatmessage);
                                         }
                                         else{
-                                            println!("{}", packets::ChatMessage::deserialize(data).chatmessage);
+                                            println!("{}", ChatMessage::deserialize(data).chatmessage);
                                         }
                                     }
-                                    else{
 
-                                    }
                                     self.data = data.to_vec();
+                                }
+                                KILLACTION => {
+                                    KillAction::deserialize(Default::default(), &mut self.game.players, data);
+
+                                    self.data = data.to_vec();
+                                }
+                                CREATEPLAYER => {
+                                    CreatePlayer::deserialize(Default::default(), &mut self.game.players, data);
+
+                                    self.data = data.to_vec();
+                                }
+                                PLAYERLEFT => {
+                                    self.game.players[data[1] as usize] = Default::default();
                                 }
                                 _ => {
                                     self.data = data.to_vec();
-                                    enet_packet_destroy(self.event.packet);
                                 }
                             }
+                            enet_packet_destroy(self.event.packet);
                         }
                         _ => {
                             // println!("undefined packet type: {:?}", self.event.type_);

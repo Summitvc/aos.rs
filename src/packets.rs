@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use std::{ffi::c_void};
 
 use enet_sys::*;
 
@@ -8,9 +8,13 @@ pub const CREATEPLAYER: u8 = 12;
 pub const STATEDATA: u8 = 15;
 pub const KILLACTION: u8 = 16;
 pub const CHATMESSAGE: u8 = 17;
-pub const MAPSTART: u8 = 18;
-pub const MAPCHUNK: u8 = 19;
-pub const MAPCACHED: u8 = 31;
+pub const PLAYERLEFT: u8 = 20;
+// pub const MAPSTART: u8 = 18;
+// pub const MAPCHUNK: u8 = 19;
+// pub const MAPCACHED: u8 = 31;
+
+pub const  CHAT_ALL: u8 = 0;
+pub const CHAT_TEAM: u8 = 1;
 
 #[derive(Clone, Debug, Default)]
 pub struct Coordinates {
@@ -58,7 +62,6 @@ pub struct Player {
 
 #[derive(Debug, Default)]
 pub struct StateData{
-    pub localplayerid: u8,
     pub fog_b: u8,
     pub fog_g: u8,
     pub fog_r: u8,
@@ -91,14 +94,131 @@ pub struct ChatMessage{
     pub chattype: u8,
     pub chatmessage: String,
 }
+#[derive(Default)]
+pub struct KillAction{
+    pub playerid: u8,
+    pub killerid: u8,
+    pub killtype: u8,
+    pub respawntime: u8,
+}
+#[derive(Default, Debug)]
+pub struct CreatePlayer{
+    pub playerid: u8,
+    pub weapon: u8,
+    pub team: i8,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub name: String,
+}
+
+impl CreatePlayer{
+    pub fn deserialize(mut self, players: &mut Vec<Player>, bytes: &[u8]){
+        self.playerid = bytes[1];
+        self.weapon = bytes[2];
+        self.team = bytes[3] as i8;
+        self.x = f32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        self.y = f32::from_le_bytes(bytes[8..12].try_into().unwrap());
+        self.z = f32::from_le_bytes(bytes[12..16].try_into().unwrap());
+        self.name = String::from_utf8(bytes[16..bytes.len()-1].to_vec()).unwrap();
+
+        //check if player is the same
+        if players[self.playerid as usize].playerid != self.playerid{
+            players[self.playerid as usize].name = self.name;
+        }
+        players[self.playerid as usize].weapon = self.weapon;
+        players[self.playerid as usize].team = self.team;
+        players[self.playerid as usize].position.x = self.x;
+        players[self.playerid as usize].position.x = self.y;
+        players[self.playerid as usize].position.x = self.z;
+    }
+}
+
+pub fn set_position(peer: *mut _ENetPeer, x: f32, y:f32, z:f32){
+    let mut buf: Vec<u8> = Vec::new();
+
+    buf.push(0);
+    buf.extend_from_slice(&x.to_le_bytes());
+    buf.extend_from_slice(&y.to_le_bytes());
+    buf.extend_from_slice(&z.to_le_bytes());
+
+    send(peer, buf);
+}
+
+pub fn set_orientation(peer: *mut _ENetPeer, x: f32, y:f32, z:f32){
+    let mut buf: Vec<u8> = Vec::new();
+
+    buf.push(1);
+    buf.extend_from_slice(&x.to_le_bytes());
+    buf.extend_from_slice(&y.to_le_bytes());
+    buf.extend_from_slice(&z.to_le_bytes());
+
+    send(peer, buf);
+}
+
+pub fn look_at(peer: *mut _ENetPeer, localplayerid: u8, players: &Vec<Player>, x: f32, y: f32, z: f32) {
+    let bot_pos = &players[localplayerid as usize].position;
+
+    let x_diff = x - bot_pos.x;
+    let y_diff = y - bot_pos.y;
+    let z_diff = z - bot_pos.z;
+
+    let mag = (x_diff*x_diff + y_diff*y_diff + z_diff*z_diff).sqrt();
+    let (x_norm, y_norm, z_norm) = if mag != 0.0 {
+        (x_diff / mag, y_diff / mag, z_diff / mag)
+    } else {
+        (0.0, 0.0, 0.0) // Avoid division by zero
+    };
+
+    set_orientation(peer, x_norm, y_norm, z_norm);
+}
+
+
+impl KillAction{
+    pub fn deserialize(mut self, players: &mut Vec<Player>, bytes: &[u8]){
+        self.playerid = bytes[1];
+        self.killerid = bytes[2];
+        self.killtype = bytes[3];
+        self.respawntime = bytes[4];
+
+        players[self.playerid as usize].dead = true;
+        players[self.killerid as usize].kills += 1;
+    }
+}
+
+pub fn send(peer: *mut _ENetPeer, mut bytes: Vec<u8>){
+    let buf_ptr: *const c_void = bytes.as_mut_ptr() as *mut c_void;
+
+    unsafe{
+        let new_packet = enet_packet_create(
+            buf_ptr,
+            bytes.len() as u64,
+            _ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE
+        );
+        
+        enet_peer_send(peer, 0, new_packet);   
+    }
+}
+
+pub fn join(peer: *mut _ENetPeer, name: String, team: i8){
+    let exps: Vec<u8> = ExistingPlayer::serialize(&Default::default(), name, team);
+
+    send(peer, exps);
+}
+
+pub fn change_team(peer: *mut _ENetPeer, id: u8, team: i8){
+    let buf: Vec<u8> = vec![29, id, team as u8];
+
+    send(peer, buf);
+}
 
 impl StateData{
-    pub fn deserialize_join(&mut self, bytes: &[u8], name: String, peer: *mut _ENetPeer, players: &mut Vec<Player>){
+    pub fn deserialize(&mut self, localplayerid: &mut u8, bytes: &[u8]){
         let mut buf:Vec<u8> = bytes.to_vec();
 
         buf.remove(0);
 
-        self.localplayerid = buf[0];
+        *localplayerid = buf[0];
         self.fog_b = buf[1];
         self.fog_g = buf[2];
         self.fog_r = buf[3];
@@ -109,42 +229,21 @@ impl StateData{
         self.team2_g = buf[8];
         self.team2_r = buf[9];
         self.team1name = String::from_utf8(buf[10..20].try_into().unwrap()).unwrap();
-        self.team2name = String::from_utf8(buf[20..30].try_into().unwrap()).unwrap();   
-
-        players[self.localplayerid as usize].playerid = self.localplayerid;
-        players[self.localplayerid as usize].name = name.clone();
-
-        let mut exps: Vec<u8> = ExistingPlayer::serialize(&Default::default(), name.clone());
-        let exps_ptr: *const c_void = exps.as_mut_ptr() as *mut c_void;
-
-        unsafe{
-            let new_packet = enet_packet_create(
-                exps_ptr,
-                exps.len() as u64,
-                _ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE
-            );
-            
-            enet_peer_send(peer, 0, new_packet);   
-        }
+        self.team2name = String::from_utf8(buf[20..30].try_into().unwrap()).unwrap();
     }
 }
 
 impl ChatMessage{
-    pub fn send(peer: *mut _ENetPeer, localplayerid: u8, message: String){
+    pub fn send(peer: *mut _ENetPeer, localplayerid: u8, chattype: u8, message: String){
         let mut buf: Vec<u8> = Vec::new();
 
         buf.push(CHATMESSAGE);
         buf.push(localplayerid);
-        buf.push(0); // - global
+        buf.push(chattype); // - global
         buf.append(&mut message.as_bytes().to_vec());
         buf.push(0);
 
-        let message_ptr: *const c_void = buf.as_mut_ptr() as *mut c_void;
-        unsafe{
-            let packet = enet_packet_create(message_ptr, buf.len() as u64, _ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE);
-            enet_peer_send(peer, 0, packet);
-        }
-
+        send(peer, buf);
     }
     pub fn deserialize(bytes: &[u8]) -> ChatMessage{
         let buf = bytes[3..bytes.len()-1].to_vec();
@@ -154,18 +253,18 @@ impl ChatMessage{
 }
 
 impl ExistingPlayer {
-    pub fn serialize(&self, name: String) -> Vec<u8> {
+    pub fn serialize(&self, name: String, team: i8) -> Vec<u8> {
         let mut buf = Vec::new();
 
         buf.push(EXISTINGPLAYER);
-        buf.push(self.playerid as u8);
-        buf.push(self.team as u8);
-        buf.push(self.weapon as u8);
-        buf.push(self.helditem as u8);
+        buf.push(self.playerid);
+        buf.push(team as u8);
+        buf.push(self.weapon);
+        buf.push(self.helditem);
         buf.extend(self.kills.to_le_bytes());
-        buf.push(self.blue as u8);
-        buf.push(self.green as u8);
-        buf.push(self.red as u8);
+        buf.push(self.blue);
+        buf.push(self.green);
+        buf.push(self.red);
         buf.extend(name.as_bytes());
 
         return buf;
