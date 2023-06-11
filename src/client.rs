@@ -7,6 +7,8 @@ use std::ptr::{null, null_mut};
 use enet_sys::*;
 use enet_sys::{self, enet_initialize};
 
+use colored::Colorize;
+
 pub const SPECTATOR: i8 = -1;
 pub const BLUE: i8 = 0;
 pub const GREEN: i8 = 1;
@@ -131,15 +133,19 @@ impl Client{
                                 }
                                 CHATMESSAGE => {
                                     if self.chat_log == true{
-                                        let fields = ChatMessage::deserialize(data);
-                                        if data[1] <= 32{
+                                        let mut filter = data.to_vec(); //fix utf8 invalid byte
+                                        if data[3] == 255{
+                                            filter[3] = 0;
+                                        }
+                                        if data[1] <= 31{
+                                            let fields = ChatMessage::deserialize(&filter);
                                             println!("#{} {}: {}",
-                                            fields.playerid,
-                                            self.game.players[fields.playerid as usize].name,
-                                            fields.chatmessage);
+                                            fields.playerid.to_string().white(),
+                                            self.game.players[fields.playerid as usize].name.purple().italic(),
+                                            fields.chatmessage.green().bold());
                                         }
                                         else{
-                                            println!("{}", ChatMessage::deserialize(data).chatmessage);
+                                            println!("{}", ChatMessage::deserialize(&filter).chatmessage);
                                         }
                                     }
                                 }

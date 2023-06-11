@@ -1,13 +1,17 @@
 #![allow(dead_code)]
 
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::io;
+
+// use telegram_notifyrs;
+
 use client::*;
 use packets::*;
 
 mod packets;
 mod utils;
 mod client;
-
-use telegram_notifyrs;
 
 /*
     make small function to check if i can update my position every step
@@ -21,15 +25,47 @@ use telegram_notifyrs;
 
 fn main(){
     let mut client = Client::init("aos://1931556250:34869", "Crab".to_owned(), GREEN);
-    // let mut client = Client::init("aos://2989848276:32887", "Crab".to_owned(), GREEN);
     client.chat_log = true;
     let mut authed: bool = false;
     let mut authid: u8 = 0;
+    
+    let shared_input = Arc::new(Mutex::new(String::new()));
 
+    // support for sending messages using stdin
+    let stdin_thread = thread::spawn({
+        let shared_input = Arc::clone(&shared_input);
+        move || {
+            let mut input = String::new();
+            loop {
+                match io::stdin().read_line(&mut input) {
+                    Ok(_) => {
+                        let mut shared_input = shared_input.lock().unwrap();
+                        *shared_input = input.clone();
+
+                        input.clear();
+                    }
+                    Err(error) => {
+                        eprintln!("Error reading input: {}", error);
+                    }
+                }
+            }
+        }
+    });
+    
     loop{
         client.service();
-        
-        if client.data != vec![0; 0]{
+
+        let mut shared_input = shared_input.lock().unwrap();
+        let input = shared_input.clone();
+
+        if !input.is_empty() {
+            packets::ChatMessage::send(client.peer, client.localplayerid, CHAT_ALL, input);
+
+            shared_input.clear();
+        }
+
+
+        if client.data != vec![0; 0]{ // vec![0; 0] instead of just [] because serde requires type annotations
             match client.data[0]{
                 CHATMESSAGE => {
                     let fields = ChatMessage::deserialize(&client.data);
@@ -87,19 +123,8 @@ fn main(){
                         }
                         "!say" =>{
                             ChatMessage::send_lines(client.peer, client.localplayerid, CHAT_ALL , [
-                                "America, fuck yeah!",
-                                "Comin' again to save the motherfuckin' day, yeah",
-                                "America, fuck Yeah!",
-                                "Freedom is the only way, yeah",
-                                "Terrorists, your game is through",
-                                "'Cause now you have ta answer to",
-                                "America, fuck yeah!",
-                                "So lick my butt and suck on my balls",
-                                "America, fuck yeah!",
-                                "Whatcha' gonna do when we come for you now",
-                                "It's the dream that we all share",
-                                "It's the hope for tomorrow",
-                                "(Fuck Yeah!)",
+                                "Hello everyone",
+                                "Im Crab"
                             ].to_vec());
                         }
                         "!kill" => {
@@ -115,13 +140,22 @@ fn main(){
                         }
                         _ => {
                             if fields.playerid <= 32{
-                                telegram_notifyrs::send_message(format!("{} : {}", client.game.players[fields.playerid as usize].name, fields.chatmessage).to_string(), "nope", 1);                                
+                                //telegram_notifyrs::send_message(format!("{} : {}", client.game.players[fields.playerid as usize].name, fields.chatmessage).to_string(), "nope", 1);                                
                             }
                         }
+                    }
+                }
+                // request client info of the new connection
+                CREATEPLAYER => {
+                    let template = format!("/client #{}", client.data[1]);
+                    println!("{:?}", template);
+                    if client.game.players[client.data[1] as usize].playerid != client.data[1]{
+                        packets::ChatMessage::send(client.peer, client.localplayerid, CHAT_ALL, template);
                     }
                 }
                 _ => {}
             }
         }
     }
+    stdin_thread.join().unwrap();
 }
