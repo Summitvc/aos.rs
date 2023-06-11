@@ -11,10 +11,12 @@ pub const SPECTATOR: i8 = -1;
 pub const BLUE: i8 = 0;
 pub const GREEN: i8 = 1;
 
+#[derive(Clone)]
 pub struct Game{
     pub players: Vec<Player>,
 }
 
+#[derive(Clone)]
 pub struct Client{
     pub client: *mut _ENetHost,
     pub peer: *mut _ENetPeer,
@@ -29,6 +31,8 @@ pub struct Client{
     pub chat_log: bool,
 }
 
+// fix for #[allow(non_upper_case_globals)] not working
+pub const ENET_TYPE_RECIEVE: u32 = _ENetEventType_ENET_EVENT_TYPE_RECEIVE;
 
 impl Client{
     pub fn init(ip: &str, name: String, team: i8) -> Self{
@@ -108,37 +112,28 @@ impl Client{
                 match conn {
                     0 => {self.data = [].to_vec()}
                     1 => match self.event.type_ {
-                        _ENetEventType_ENET_EVENT_TYPE_RECEIVE => {
+                        ENET_TYPE_RECIEVE => {
                             let data = std::slice::from_raw_parts(
                                 (*self.event.packet).data,
                                 (*self.event.packet).dataLength as usize,
-                            );
-    
+                            ); 
                             match data[0] {
                                 STATEDATA => {
                                     StateData::deserialize(&mut self.statedata, &mut self.localplayerid, data);
 
                                     join(self.peer, self.name.clone(), self.team);
-
-                                    self.data = data.to_vec();
                                 }
-    
                                 EXISTINGPLAYER => {
                                     ExistingPlayer::deserialize(data, &mut self.game.players);
-
-                                    self.data = data.to_vec();
                                 }
-                                
                                 WORLDUPDATE => {
                                     WorldUpdate::deserialize(data, &mut self.game.players);
-
-                                    self.data = data.to_vec();
                                 }
                                 CHATMESSAGE => {
                                     if self.chat_log == true{
                                         let fields = ChatMessage::deserialize(data);
                                         if data[1] <= 32{
-                                            println!("{} {}: {}",
+                                            println!("#{} {}: {}",
                                             fields.playerid,
                                             self.game.players[fields.playerid as usize].name,
                                             fields.chatmessage);
@@ -147,26 +142,19 @@ impl Client{
                                             println!("{}", ChatMessage::deserialize(data).chatmessage);
                                         }
                                     }
-
-                                    self.data = data.to_vec();
                                 }
                                 KILLACTION => {
                                     KillAction::deserialize(Default::default(), &mut self.game.players, data);
-
-                                    self.data = data.to_vec();
                                 }
                                 CREATEPLAYER => {
                                     CreatePlayer::deserialize(Default::default(), &mut self.game.players, data);
-
-                                    self.data = data.to_vec();
                                 }
                                 PLAYERLEFT => {
                                     self.game.players[data[1] as usize] = Default::default();
                                 }
-                                _ => {
-                                    self.data = data.to_vec();
-                                }
+                                _ => {}
                             }
+                            self.data = data.to_vec();
                             enet_packet_destroy(self.event.packet);
                         }
                         _ => {

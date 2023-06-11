@@ -1,6 +1,10 @@
 use std::{ffi::c_void};
+use std::time::{self, Duration};
+use std::thread;
 
 use enet_sys::*;
+
+use crate::client::Client;
 
 pub const WORLDUPDATE: u8 = 2;
 pub const EXISTINGPLAYER: u8 = 9;
@@ -13,8 +17,9 @@ pub const PLAYERLEFT: u8 = 20;
 // pub const MAPCHUNK: u8 = 19;
 // pub const MAPCACHED: u8 = 31;
 
-pub const  CHAT_ALL: u8 = 0;
+pub const  CHAT_ALL: u8 = 0;    
 pub const CHAT_TEAM: u8 = 1;
+pub const CHAT_SYSTEM: u8 = 2;
 
 #[derive(Clone, Debug, Default)]
 pub struct Coordinates {
@@ -60,7 +65,7 @@ pub struct Player {
     pub team: i8,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct StateData{
     pub fog_b: u8,
     pub fog_g: u8,
@@ -94,7 +99,7 @@ pub struct ChatMessage{
     pub chattype: u8,
     pub chatmessage: String,
 }
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct KillAction{
     pub playerid: u8,
     pub killerid: u8,
@@ -111,6 +116,8 @@ pub struct CreatePlayer{
     pub z: f32,
     pub name: String,
 }
+
+pub struct ExtraPackets{}
 
 impl CreatePlayer{
     pub fn deserialize(mut self, players: &mut Vec<Player>, bytes: &[u8]){
@@ -156,21 +163,81 @@ pub fn set_orientation(peer: *mut _ENetPeer, x: f32, y:f32, z:f32){
     send(peer, buf);
 }
 
-pub fn look_at(peer: *mut _ENetPeer, localplayerid: u8, players: &Vec<Player>, x: f32, y: f32, z: f32) {
-    let bot_pos = &players[localplayerid as usize].position;
+impl ExtraPackets{
+    pub fn test(mut client:Client){
+        for i in 0..3{
+            println!("{:?}", client.game.players[client.localplayerid as usize].position);
+            let pos = &client.game.players[client.localplayerid as usize].position;
+            set_position(client.peer, pos.x + i as f32 , pos.y, pos.z);
+            unsafe{
+                enet_host_flush(client.client);
+            }
+            client.service();
+            thread::sleep(time::Duration::from_secs(1));
+        }
 
-    let x_diff = x - bot_pos.x;
-    let y_diff = y - bot_pos.y;
-    let z_diff = z - bot_pos.z;
+    }
+    pub fn look_at(peer: *mut _ENetPeer, localplayerid: u8, players: &Vec<Player>, x: f32, y: f32, z: f32) {
+        let bot_pos = &players[localplayerid as usize].position;
+        
+        let x_diff = x - bot_pos.x;
+        let y_diff = y - bot_pos.y;
+        let z_diff = z - bot_pos.z;
+        
+        let mag = (x_diff*x_diff + y_diff*y_diff + z_diff*z_diff).sqrt();
+        let (x_norm, y_norm, z_norm) = if mag != 0.0 {
+            (x_diff / mag, y_diff / mag, z_diff / mag)
+        } else {
+            (0.0, 0.0, 0.0) // Avoid division by zero
+        };
+        
+        set_orientation(peer, x_norm, y_norm, z_norm);
+    }
 
-    let mag = (x_diff*x_diff + y_diff*y_diff + z_diff*z_diff).sqrt();
-    let (x_norm, y_norm, z_norm) = if mag != 0.0 {
-        (x_diff / mag, y_diff / mag, z_diff / mag)
-    } else {
-        (0.0, 0.0, 0.0) // Avoid division by zero
-    };
-
-    set_orientation(peer, x_norm, y_norm, z_norm);
+    pub fn change_team(peer: *mut _ENetPeer, id: u8, team: i8){
+        let buf: Vec<u8> = vec![29, id, team as u8];
+    
+        send(peer, buf);
+    }
+    pub fn teleport(client: Client, id: u8){
+        let player_pos = &client.game.players[id as usize].position;
+        let bot_pos = &client.game.players[client.localplayerid as usize].position;
+        let ori = &client.game.players[client.localplayerid as usize].orientation;
+        ExtraPackets::look_at(client.peer, client.localplayerid, &client.game.players, player_pos.x, player_pos.y, player_pos.z);
+        unsafe{
+            enet_host_flush(client.client);
+        }
+        thread::sleep(Duration::from_millis(2000));
+    
+        client.clone().service();
+    
+        let xdiff = player_pos.x - bot_pos.x;
+        let ydiff = player_pos.y - bot_pos.y;
+        let zdiff = player_pos.z - bot_pos.z;
+    
+        let length = (xdiff * xdiff + ydiff * ydiff + zdiff * zdiff).sqrt().round();
+    
+        println!("length {}", length);
+    
+        let step = 1;
+        let steps: u32 = length as u32/step;
+    
+        println!("steps {}", steps);
+    
+        for k in 0..steps{
+            let bot_pos2 = &client.game.players[client.localplayerid as usize].position;
+            set_position(
+                client.peer,
+                (bot_pos2.x + ori.x) + k as f32,
+                (bot_pos2.y + ori.y) + k as f32,
+                (bot_pos2.z + ori.z) + k as f32,
+            );
+            println!("{:?}", bot_pos2);
+            client.clone().service();
+            thread::sleep(Duration::from_millis(1000));
+    
+        }
+    }
 }
 
 
@@ -192,7 +259,7 @@ pub fn send(peer: *mut _ENetPeer, mut bytes: Vec<u8>){
     unsafe{
         let new_packet = enet_packet_create(
             buf_ptr,
-            bytes.len() as u64,
+            bytes.len() as usize,
             _ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE
         );
         
@@ -204,12 +271,6 @@ pub fn join(peer: *mut _ENetPeer, name: String, team: i8){
     let exps: Vec<u8> = ExistingPlayer::serialize(&Default::default(), name, team);
 
     send(peer, exps);
-}
-
-pub fn change_team(peer: *mut _ENetPeer, id: u8, team: i8){
-    let buf: Vec<u8> = vec![29, id, team as u8];
-
-    send(peer, buf);
 }
 
 impl StateData{
@@ -239,11 +300,20 @@ impl ChatMessage{
 
         buf.push(CHATMESSAGE);
         buf.push(localplayerid);
-        buf.push(chattype); // - global
+        buf.push(chattype);
         buf.append(&mut message.as_bytes().to_vec());
         buf.push(0);
 
         send(peer, buf);
+    }
+    pub fn send_lines(peer: *mut _ENetPeer, localplayerid: u8, chattype: u8, lines: Vec<&str>){
+        for message in lines{
+            ChatMessage::send(peer, localplayerid, chattype, message.to_owned());
+            unsafe {
+                enet_host_service((*peer).host, std::ptr::null_mut(), 0);
+            }
+            thread::sleep(time::Duration::from_secs(3));
+        }
     }
     pub fn deserialize(bytes: &[u8]) -> ChatMessage{
         let buf = bytes[3..bytes.len()-1].to_vec();
