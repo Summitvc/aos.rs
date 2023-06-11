@@ -63,6 +63,7 @@ pub struct Player {
     pub blocks: u8,
     pub dead: bool,
     pub team: i8,
+    pub connected: bool,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -132,6 +133,7 @@ impl CreatePlayer{
         //check if player is the same
         if players[self.playerid as usize].playerid != self.playerid{
             players[self.playerid as usize].name = self.name;
+            players[self.playerid as usize].connected = true;
         }
         players[self.playerid as usize].weapon = self.weapon;
         players[self.playerid as usize].team = self.team;
@@ -355,6 +357,7 @@ impl ExistingPlayer {
         players[playerid as usize].playerid = playerid;
         players[playerid as usize].kills = kills;
         players[playerid as usize].weapon = weapon;
+        players[playerid as usize].connected = true;
     }
 }
 

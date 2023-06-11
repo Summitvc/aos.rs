@@ -137,7 +137,7 @@ impl Client{
                                         if data[3] == 255{
                                             filter[3] = 0;
                                         }
-                                        if data[1] <= 31{
+                                        if data[1] <= 32{
                                             let fields = ChatMessage::deserialize(&filter);
                                             println!("#{} {}: {}",
                                             fields.playerid.to_string().white(),
@@ -156,7 +156,7 @@ impl Client{
                                     CreatePlayer::deserialize(Default::default(), &mut self.game.players, data);
                                 }
                                 PLAYERLEFT => {
-                                    self.game.players[data[1] as usize] = Default::default();
+                                    self.game.players[data[1] as usize].connected = false;
                                 }
                                 _ => {}
                             }

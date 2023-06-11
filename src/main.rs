@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::io;
 
+use colored::Colorize;
+
 // use telegram_notifyrs;
 
 use client::*;
@@ -56,9 +58,10 @@ fn main(){
         client.service();
 
         let mut shared_input = shared_input.lock().unwrap();
-        let input = shared_input.clone();
+        let mut input = shared_input.clone();
 
         if !input.is_empty() {
+            input.pop();
             packets::ChatMessage::send(client.peer, client.localplayerid, CHAT_ALL, input);
 
             shared_input.clear();
@@ -114,7 +117,9 @@ fn main(){
                             }
                         }
                         "!do" => {
-                            packets::ExtraPackets::test(client.clone());
+                            for i in 0..31{
+                                println!("id: {}, name: {}", i, client.game.players[i as usize].name);
+                            }
                         }
                         "!go" => {
                             let pos = &client.game.players[client.localplayerid as usize].position;
@@ -147,11 +152,20 @@ fn main(){
                 }
                 // request client info of the new connection
                 CREATEPLAYER => {
-                    let template = format!("/client #{}", client.data[1]);
-                    println!("{:?}", template);
-                    if client.game.players[client.data[1] as usize].playerid != client.data[1]{
-                        packets::ChatMessage::send(client.peer, client.localplayerid, CHAT_ALL, template);
+                    let mut template = format!("/client #{}", client.data[1]);
+                    if client.game.players[client.data[1] as usize].playerid != client.data[1] && client.data[1] != client.localplayerid{
+                        packets::ChatMessage::send(client.peer, client.localplayerid, CHAT_ALL, template.clone());
+                        println!("{} {}", 
+                        client.game.players[client.data[1] as usize].name.bright_blue(),
+                        "joined".bright_blue());
                     }
+                    template.clear();
+                }
+                PLAYERLEFT => {
+                    println!("{} {}", 
+                    client.game.players[client.data[1] as usize].name.bright_red(),
+                    "disconnected".bright_red()
+                ); 
                 }
                 _ => {}
             }
