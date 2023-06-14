@@ -131,7 +131,7 @@ impl CreatePlayer{
         self.name = String::from_utf8(bytes[16..bytes.len()-1].to_vec()).unwrap();
 
         //check if player is the same
-        if players[self.playerid as usize].playerid != self.playerid{
+        if players[self.playerid as usize].connected != true{
             players[self.playerid as usize].name = self.name;
             players[self.playerid as usize].connected = true;
         }

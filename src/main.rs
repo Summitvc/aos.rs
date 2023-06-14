@@ -4,10 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::io;
 
-use colored::Colorize;
-
-// use telegram_notifyrs;
-
 use client::*;
 use packets::*;
 
@@ -27,7 +23,8 @@ mod client;
 
 fn main(){
     let mut client = Client::init("aos://1931556250:34869", "Crab".to_owned(), GREEN);
-    client.chat_log = true;
+    client.log_chat = true;
+    client.log_connections = true;
     let mut authed: bool = false;
     let mut authid: u8 = 0;
     
@@ -117,8 +114,8 @@ fn main(){
                             }
                         }
                         "!do" => {
-                            for i in 0..31{
-                                println!("id: {}, name: {}", i, client.game.players[i as usize].name);
+                            for i in 0..32{
+                                println!("id: {}, name: {}, status: {}", i, client.game.players[i as usize].name, client.game.players[i as usize].connected);
                             }
                         }
                         "!go" => {
@@ -145,27 +142,17 @@ fn main(){
                         }
                         _ => {
                             if fields.playerid <= 32{
-                                //telegram_notifyrs::send_message(format!("{} : {}", client.game.players[fields.playerid as usize].name, fields.chatmessage).to_string(), "nope", 1);                                
+                                telegram_notifyrs::send_message(format!("{} : {}", client.game.players[fields.playerid as usize].name, fields.chatmessage).to_string(), "", 1);
                             }
                         }
                     }
                 }
-                // request client info of the new connection
+                // telegram forwarding
                 CREATEPLAYER => {
-                    let mut template = format!("/client #{}", client.data[1]);
-                    if client.game.players[client.data[1] as usize].playerid != client.data[1] && client.data[1] != client.localplayerid{
-                        packets::ChatMessage::send(client.peer, client.localplayerid, CHAT_ALL, template.clone());
-                        println!("{} {}", 
-                        client.game.players[client.data[1] as usize].name.bright_blue(),
-                        "joined".bright_blue());
-                    }
-                    template.clear();
+                    // telegram_notifyrs::send_message(format!("{} connected", client.game.players[client.data[1] as usize].name), "", );
                 }
                 PLAYERLEFT => {
-                    println!("{} {}", 
-                    client.game.players[client.data[1] as usize].name.bright_red(),
-                    "disconnected".bright_red()
-                ); 
+                    // telegram_notifyrs::send_message(format!("{} disconnected", client.game.players[client.data[1] as usize].name), "", );
                 }
                 _ => {}
             }

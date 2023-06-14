@@ -1,3 +1,4 @@
+use crate::packets;
 use crate::packets::*;
 use crate::utils;
 
@@ -30,7 +31,8 @@ pub struct Client{
     pub team: i8,
     pub data: Vec<u8>,
     pub statedata: StateData,
-    pub chat_log: bool,
+    pub log_chat: bool,
+    pub log_connections: bool,
 }
 
 // fix for #[allow(non_upper_case_globals)] not working
@@ -88,7 +90,8 @@ impl Client{
             let data = Vec::new();
             let statedata: StateData = Default::default();
             let localplayerid = 0;
-            let chat_log = false;
+            let log_chat = false;
+            let log_connections = false;
             
             println!("Connecting...");
             
@@ -103,14 +106,15 @@ impl Client{
                 team,
                 data,
                 statedata,
-                chat_log,
+                log_chat,
+                log_connections,
             }
         }
     }
 
     pub fn service(&mut self){
         unsafe{
-                let conn = enet_host_service(self.client, &mut self.event, 0);
+                let conn = enet_host_service(self.client, &mut self.event, 1);
                 match conn {
                     0 => {self.data = [].to_vec()}
                     1 => match self.event.type_ {
@@ -132,20 +136,35 @@ impl Client{
                                     WorldUpdate::deserialize(data, &mut self.game.players);
                                 }
                                 CHATMESSAGE => {
-                                    if self.chat_log == true{
+                                    if self.log_chat == true{
                                         let mut filter = data.to_vec(); //fix utf8 invalid byte
                                         if data[3] == 255{
                                             filter[3] = 0;
                                         }
                                         if data[1] <= 32{
-                                            let fields = ChatMessage::deserialize(&filter);
-                                            println!("#{} {}: {}",
-                                            fields.playerid.to_string().white(),
-                                            self.game.players[fields.playerid as usize].name.purple().italic(),
-                                            fields.chatmessage.green().bold());
-                                        }
-                                        else{
-                                            println!("{}", ChatMessage::deserialize(&filter).chatmessage);
+                                            if data[2] == 0{
+                                                let fields = ChatMessage::deserialize(&filter);
+                                                println!("[Global] {}{} {}: {}",
+                                                "#".white(), //ew
+                                                fields.playerid.to_string().white(),
+                                                self.game.players[fields.playerid as usize].name.purple().italic(),
+                                                fields.chatmessage.green().bold());
+                                            }
+                                            else if data[2] == 1{
+                                                let fields = ChatMessage::deserialize(&filter);
+                                                println!("{} {}{} {}: {}",
+                                                "[Team]".bright_blue(),
+                                                "#".white(),
+                                                fields.playerid.to_string().white(),
+                                                self.game.players[fields.playerid as usize].name.purple().italic(),
+                                                fields.chatmessage.green().bold());
+                                            }
+                                            else{
+                                                let fields = ChatMessage::deserialize(&filter);
+                                                println!("{} {}",
+                                                "[Server]".strikethrough(),
+                                                fields.chatmessage.white().bold());
+                                            }
                                         }
                                     }
                                 }
@@ -153,9 +172,29 @@ impl Client{
                                     KillAction::deserialize(Default::default(), &mut self.game.players, data);
                                 }
                                 CREATEPLAYER => {
-                                    CreatePlayer::deserialize(Default::default(), &mut self.game.players, data);
+                                    if self.game.players[data[1] as usize].connected == false && data[1] != self.localplayerid && self.log_connections == true{
+                                        let mut template = format!("/client #{}", data[1]);
+                                        CreatePlayer::deserialize(Default::default(), &mut self.game.players, data);
+
+                                        packets::ChatMessage::send(self.peer, self.localplayerid, CHAT_ALL, template.clone());
+                                        println!("{} {}",
+                                            self.game.players[data[1] as usize].name.bright_blue(),
+                                            "joined".bright_blue());
+                                        
+                                        template.clear();
+                                    }
+                                    else{
+                                        CreatePlayer::deserialize(Default::default(), &mut self.game.players, data);
+                                    }
+
+                                    
                                 }
                                 PLAYERLEFT => {
+                                    if data[1] != self.localplayerid && self.log_connections == true{
+                                        println!("{} {}",
+                                            self.game.players[data[1] as usize].name.bright_red(),
+                                            "disconnected".bright_red());
+                                    }
                                     self.game.players[data[1] as usize].connected = false;
                                 }
                                 _ => {}
