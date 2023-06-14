@@ -15,7 +15,7 @@ pub const CHATMESSAGE: u8 = 17;
 pub const PLAYERLEFT: u8 = 20;
 // pub const MAPSTART: u8 = 18;
 // pub const MAPCHUNK: u8 = 19;
-// pub const MAPCACHED: u8 = 31;
+// pub const MAPCACHED: u8 = 31;    
 
 pub const  CHAT_ALL: u8 = 0;    
 pub const CHAT_TEAM: u8 = 1;
@@ -128,7 +128,7 @@ impl CreatePlayer{
         self.x = f32::from_le_bytes(bytes[4..8].try_into().unwrap());
         self.y = f32::from_le_bytes(bytes[8..12].try_into().unwrap());
         self.z = f32::from_le_bytes(bytes[12..16].try_into().unwrap());
-        self.name = String::from_utf8(bytes[16..bytes.len()-1].to_vec()).unwrap();
+        self.name = String::from_utf8_lossy(&bytes[16..bytes.len()-1]).to_string();
 
         //check if player is the same
         if players[self.playerid as usize].connected != true{
