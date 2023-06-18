@@ -126,8 +126,6 @@ impl Client{
                             match data[0] {
                                 STATEDATA => {
                                     StateData::deserialize(&mut self.statedata, &mut self.localplayerid, data);
-
-                                    join(self.peer, self.name.clone(), self.team);
                                 }
                                 EXISTINGPLAYER => {
                                     ExistingPlayer::deserialize(data, &mut self.game.players);
@@ -210,11 +208,6 @@ impl Client{
                         println!("Error servicing ENet: {:?}", conn);
                     }
                 }
-            }
-        }
-        pub fn disconnect(&self){
-            unsafe{
-                enet_peer_disconnect(self.peer, 0);
             }
         }
     }

@@ -5,21 +5,12 @@ use std::thread;
 use std::io;
 
 use client::*;
+use enet_sys::{enet_peer_disconnect_later, enet_peer_disconnect_now};
 use packets::*;
 
 mod packets;
 mod utils;
 mod client;
-
-/*
-    make small function to check if i can update my position every step
-
-    for 0..5{
-        pos++
-
-        println(pos)
-    }
- */
 
 fn main(){
     let mut client = Client::init("aos://1931556250:34869", "Crab".to_owned(), GREEN);
@@ -31,7 +22,7 @@ fn main(){
     let shared_input = Arc::new(Mutex::new(String::new()));
 
     // support for sending messages using stdin
-    let stdin_thread = thread::spawn({
+    let _stdin_thread = thread::spawn({
         let shared_input = Arc::clone(&shared_input);
         move || {
             let mut input = String::new();
@@ -65,8 +56,11 @@ fn main(){
         }
 
 
-        if client.data != vec![0; 0]{ // vec![0; 0] instead of just [] because serde requires type annotations
+        if client.data != vec![0; 0]{ // vec![0; 0] instead of just [] because serde(required by telegram lib) requires type annotations
             match client.data[0]{
+                STATEDATA => {
+                    join(client.peer, client.name.clone(), client.team);
+                }
                 CHATMESSAGE => {
                     let fields = ChatMessage::deserialize(&client.data);
                     match fields.chatmessage.as_str(){
@@ -113,11 +107,6 @@ fn main(){
                                 ChatMessage::send(client.peer, client.localplayerid, CHAT_ALL, "Coming".to_owned());
                             }
                         }
-                        "!do" => {
-                            for i in 0..32{
-                                println!("id: {}, name: {}, status: {}", i, client.game.players[i as usize].name, client.game.players[i as usize].connected);
-                            }
-                        }
                         "!go" => {
                             let pos = &client.game.players[client.localplayerid as usize].position;
                             let ori = &client.game.players[client.localplayerid as usize].orientation;
@@ -136,14 +125,35 @@ fn main(){
                         }
                         "!leave" => {
                             if authid == fields.playerid{
-                                client.disconnect();
-                                break;
+                                unsafe{
+                                    enet_peer_disconnect_now(client.peer, 0);
+                                    break;
+                                }
                             }
                         }
                         _ => {
-                            if fields.playerid <= 32{
-                                telegram_notifyrs::send_message(format!("{} : {}", client.game.players[fields.playerid as usize].name, fields.chatmessage).to_string(), "", 1);
-                            }
+                            let mut filter = client.data.to_vec(); //fix utf8 invalid byte
+                                if client.data[3] == 255{
+                                    filter[3] = 0;
+                                }
+                                if client.data[1] <= 32{
+                                    if client.data[2] == 0{
+                                        telegram_notifyrs::send_message(format!("[Global] #{} {}: {}", 
+                                        fields.playerid,
+                                        client.game.players[client.data[1] as usize].name,
+                                        &fields.chatmessage), "", 1);
+                                    }
+                                    else if client.data[2] == 1{
+                                        telegram_notifyrs::send_message(format!("[Team] #{} {}: {}",
+                                        fields.playerid,
+                                        client.game.players[client.data[1] as usize].name,
+                                        &fields.chatmessage), "", 1);
+                                    }
+                                    else{
+                                        telegram_notifyrs::send_message(format!("[Server] {}",
+                                        &fields.chatmessage), "", 1);
+                                    }
+                                }
                         }
                     }
                 }
@@ -158,5 +168,4 @@ fn main(){
             }
         }
     }
-    stdin_thread.join().unwrap();
 }

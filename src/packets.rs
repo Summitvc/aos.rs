@@ -303,6 +303,7 @@ impl ChatMessage{
         buf.push(CHATMESSAGE);
         buf.push(localplayerid);
         buf.push(chattype);
+        buf.push(255);
         buf.append(&mut message.as_bytes().to_vec());
         buf.push(0);
 
