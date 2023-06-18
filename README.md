@@ -13,5 +13,5 @@ My first project written in rust.
 The bot part comes in main.rs, everything else is just a library so to create your own bot, delete/move the current main.rs file and create a new one.
 You can check an example that comes by default with the repo(main.rs).
 
-##Contributing
+## Contributing
 Feel free to contribute!
