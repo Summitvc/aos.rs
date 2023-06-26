@@ -19,6 +19,9 @@ fn main() {
     let mut authed: bool = false;
     let mut authid: u8 = 0;
 
+    let tg_token = "";
+    let tg_id = 0;
+
     let shared_input = Arc::new(Mutex::new(String::new()));
 
     // support for sending messages using stdin
@@ -60,6 +63,7 @@ fn main() {
             match client.data[0] {
                 STATEDATA => {
                     join(client.peer, client.name.clone(), client.team);
+                    
                 }
                 CHATMESSAGE => {
                     let fields = ChatMessage::deserialize(&client.data);
@@ -97,6 +101,13 @@ fn main() {
                                     CHAT_ALL,
                                     coords,
                                 );
+                            }
+                        }
+                        "!do" => {
+                            for i in &client.game.players{
+                                if i.connected == true{
+                                    println!("{}, dead: {}", i.name, i.dead);
+                                }
                             }
                         }
                         "!switch" => {
@@ -142,24 +153,6 @@ fn main() {
                                 }
                             }
                         }
-                        "!come" => {
-                            if authid == fields.playerid {
-                                let id = fields.playerid;
-                                ExtraPackets::teleport(client.clone(), id);
-                                ChatMessage::send(
-                                    client.peer,
-                                    client.localplayerid,
-                                    CHAT_ALL,
-                                    "Coming".to_owned(),
-                                );
-                            }
-                        }
-                        "!go" => {
-                            let pos = &client.game.players[client.localplayerid as usize].position;
-                            let ori =
-                                &client.game.players[client.localplayerid as usize].orientation;
-                            set_position(client.peer, pos.x + ori.x, pos.y + ori.y, pos.z + ori.z);
-                        }
                         "!say" => {
                             ChatMessage::send_lines(
                                 client.peer,
@@ -200,8 +193,8 @@ fn main() {
                                             client.game.players[client.data[1] as usize].name,
                                             &fields.chatmessage
                                         ),
-                                        "",
-                                        1,
+                                        tg_token,
+                                        tg_id,
                                     );
                                 } else if client.data[2] == 1 {
                                     telegram_notifyrs::send_message(
@@ -211,14 +204,14 @@ fn main() {
                                             client.game.players[client.data[1] as usize].name,
                                             &fields.chatmessage
                                         ),
-                                        "",
-                                        1,
+                                        tg_token,
+                                        tg_id,
                                     );
                                 } else {
                                     telegram_notifyrs::send_message(
                                         format!("[Server] {}", &fields.chatmessage),
-                                        "",
-                                        1,
+                                        tg_token,
+                                        tg_id,
                                     );
                                 }
                             }
@@ -227,10 +220,10 @@ fn main() {
                 }
                 // telegram forwarding
                 CREATEPLAYER => {
-                    // telegram_notifyrs::send_message(format!("{} connected", client.game.players[client.data[1] as usize].name), "", );
+                    // telegram_notifyrs::send_message(format!("{} connected", client.game.players[client.data[1] as usize].name), tg_token, tg_id);
                 }
                 PLAYERLEFT => {
-                    // telegram_notifyrs::send_message(format!("{} disconnected", client.game.players[client.data[1] as usize].name), "", );
+                    // telegram_notifyrs::send_message(format!("{} disconnected", client.game.players[client.data[1] as usize].name), tg_token, tg_id);
                 }
                 _ => {}
             }

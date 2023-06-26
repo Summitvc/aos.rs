@@ -135,12 +135,14 @@ impl CreatePlayer {
         if players[self.playerid as usize].connected != true {
             players[self.playerid as usize].name = self.name;
             players[self.playerid as usize].connected = true;
+            players[self.playerid as usize].dead = false;
         }
         players[self.playerid as usize].weapon = self.weapon;
         players[self.playerid as usize].team = self.team;
         players[self.playerid as usize].position.x = self.x;
         players[self.playerid as usize].position.x = self.y;
         players[self.playerid as usize].position.x = self.z;
+        players[self.playerid as usize].dead = false;
     }
 }
 
