@@ -5,8 +5,8 @@ My first project written in rust.
 ## How to install?
 ### Linux: 
 1. install rust
-2. `sudo apt install cmake`
-3. `git clone https://github.com/Summitvc/aos.rs`
+2. `sudo apt install libclang libc build-essential cmake`
+3. `git clone https://github.com/Summitvc/aos.rs && cd aos.rs`
 4. `cargo run`
 
 ## How to create my own bot?
