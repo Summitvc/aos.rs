@@ -15,7 +15,7 @@ pub fn ip(address: &str) -> Result<Vec<String>, Error> {
     let ip: u32 = match addr_split[0].parse() {
         Ok(ip) => ip,
         Err(_) => {
-            println!("Wrong input");
+            println!("Wrong ip format");
             return Err(Error);
         }
     };

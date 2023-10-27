@@ -130,6 +130,33 @@ impl Client {
                             WORLDUPDATE => {
                                 WorldUpdate::deserialize(data, &mut self.game.players);
                             }
+                            HANDSHAKE_INIT => {
+                                let mut buf: Vec<u8> = vec![];
+                                buf.push(HANDSHAKE_RETURN);
+                                buf.extend_from_slice(&data[1..]);
+                                packets::send(self.peer, buf);
+                            }
+                            VERSION_REQ => {
+                                let version = VersionInfo {
+                                    client: i8::from_le_bytes("r".as_bytes().try_into().unwrap()),
+                                    version_major: 1,
+                                    version_minor: 2,
+                                    version_revision: 5,
+                                    operating_system_info: "aos.rs".to_string(),
+                                };
+
+                                let mut buf: Vec<u8> = vec![];
+
+                                buf.push(VERSION_RESP);
+                                buf.push(version.client as u8);
+                                buf.push(version.version_major);
+                                buf.push(version.version_minor);
+                                buf.push(version.version_revision);
+                                buf.extend_from_slice(version.operating_system_info.as_bytes());
+
+                                packets::send(self.peer, buf);
+                            }
+
                             CHATMESSAGE => {
                                 if self.log_chat == true {
                                     if data[1] <= 32 {

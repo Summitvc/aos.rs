@@ -1,9 +1,10 @@
-use std::ffi::c_void;
 use std::thread;
 use std::time::{self, Duration};
 
 use codepage_437::{FromCp437, CP437_WINGDINGS};
 use enet_sys::*;
+
+use std::sync::mpsc;
 
 use crate::client::Client;
 
@@ -14,6 +15,11 @@ pub const STATEDATA: u8 = 15;
 pub const KILLACTION: u8 = 16;
 pub const CHATMESSAGE: u8 = 17;
 pub const PLAYERLEFT: u8 = 20;
+pub const GRENADEPACKET: u8 = 6;
+pub const HANDSHAKE_INIT: u8 = 31;
+pub const HANDSHAKE_RETURN: u8 = 32;
+pub const VERSION_REQ: u8 = 33;
+pub const VERSION_RESP: u8 = 34;
 // pub const MAPSTART: u8 = 18;
 // pub const MAPCHUNK: u8 = 19;
 // pub const MAPCACHED: u8 = 31;
@@ -59,6 +65,7 @@ pub struct Player {
     pub weapon: u8,
     pub weaponclip: u8,
     pub weaponreserve: u8,
+    pub grenades: u8,
     pub firing: bool,
     pub tool: u8,
     pub blocks: u8,
@@ -118,6 +125,13 @@ pub struct CreatePlayer {
     pub z: f32,
     pub name: String,
 }
+pub struct VersionInfo {
+    pub client: i8,
+    pub version_major: u8,
+    pub version_minor: u8,
+    pub version_revision: u8,
+    pub operating_system_info: String,
+}
 
 pub struct ExtraPackets {}
 
@@ -131,7 +145,7 @@ impl CreatePlayer {
         self.z = f32::from_le_bytes(bytes[12..16].try_into().unwrap());
         self.name = String::from_utf8_lossy(&bytes[16..bytes.len() - 1]).to_string();
 
-        //check if player is the same
+        //check if player joined or respawned
         if players[self.playerid as usize].connected != true {
             players[self.playerid as usize].name = self.name;
             players[self.playerid as usize].connected = true;
@@ -142,7 +156,37 @@ impl CreatePlayer {
         players[self.playerid as usize].position.x = self.x;
         players[self.playerid as usize].position.x = self.y;
         players[self.playerid as usize].position.x = self.z;
+        players[self.playerid as usize].grenades = 3;
         players[self.playerid as usize].dead = false;
+    }
+}
+
+pub fn throw_grenade(
+    peer: *mut _ENetPeer,
+    localplayerid: u8,
+    players: &mut Vec<Player>,
+    fuselength: f32,
+    xp: f32,
+    yp: f32,
+    zp: f32,
+    xv: f32,
+    yv: f32,
+    zv: f32,
+) {
+    let mut buf = Vec::new();
+
+    buf.push(GRENADEPACKET);
+    buf.push(localplayerid);
+    buf.extend_from_slice(&fuselength.to_le_bytes());
+    buf.extend_from_slice(&xp.to_le_bytes());
+    buf.extend_from_slice(&yp.to_le_bytes());
+    buf.extend_from_slice(&zp.to_le_bytes());
+    buf.extend_from_slice(&xv.to_le_bytes());
+    buf.extend_from_slice(&yv.to_le_bytes());
+    buf.extend_from_slice(&zv.to_le_bytes());
+    if players[localplayerid as usize].grenades > 0 {
+        players[localplayerid as usize].grenades -= 1;
+        send(peer, buf);
     }
 }
 
@@ -274,8 +318,8 @@ impl KillAction {
     }
 }
 
-pub fn send(peer: *mut _ENetPeer, mut bytes: Vec<u8>) {
-    let buf_ptr: *const c_void = bytes.as_mut_ptr() as *mut c_void;
+pub fn send(peer: *mut _ENetPeer, bytes: Vec<u8>) {
+    let buf_ptr: *const _ = bytes.as_ptr() as *mut _;
 
     unsafe {
         let new_packet = enet_packet_create(
@@ -322,24 +366,51 @@ impl ChatMessage {
         buf.push(CHATMESSAGE);
         buf.push(localplayerid);
         buf.push(chattype);
-        buf.push(255);
+        // buf.push(255);
         buf.append(&mut message.as_bytes().to_vec());
         buf.push(0);
 
         send(peer, buf);
     }
-    pub fn send_lines(peer: *mut _ENetPeer, localplayerid: u8, chattype: u8, lines: Vec<&str>) {
-        for message in lines {
-            ChatMessage::send(peer, localplayerid, chattype, message.to_owned());
-            unsafe {
-                enet_host_service((*peer).host, std::ptr::null_mut(), 0);
+    pub fn send_lines(
+        client: &mut Client,
+        peer: *mut _ENetPeer,
+        localplayerid: u8,
+        chattype: u8,
+        lines: Vec<&str>,
+    ) {
+        let mut g = true; // toggle sending
+        let mut k = 0; // counter
+        let mut a = lines.iter();
+
+        let (tx, rx) = mpsc::channel();
+        loop {
+            if g == true {
+                ChatMessage::send(peer, localplayerid, chattype, a.next().unwrap().to_string());
+
+                let tx_clone = tx.clone();
+
+                thread::spawn(move || {
+                    thread::sleep(Duration::from_secs(2));
+                    tx_clone.send(()).unwrap();
+                });
             }
-            thread::sleep(time::Duration::from_secs(3));
+            g = false;
+            client.service();
+
+            if let Ok(()) = rx.try_recv() {
+                k += 1;
+                g = true;
+            }
+            if k == lines.len() {
+                break;
+            }
         }
     }
     pub fn deserialize(bytes: &[u8]) -> ChatMessage {
         let mut buf = bytes[3..bytes.len() - 1].to_vec();
 
+        // 255 is an identification byte in the chat message packet which tells wether the text is encoded using cp437 or utf-8
         if buf[0] == 255 {
             buf[0] = 0;
             ChatMessage {
@@ -418,14 +489,10 @@ impl WorldUpdate {
                     for i in chop {
                         let vec = i.to_vec();
                         let mut iter = vec.into_iter();
-                        let f: [u8; 4] = {
-                            [
-                                iter.next().unwrap_or(0),
-                                iter.next().unwrap_or(0),
-                                iter.next().unwrap_or(0),
-                                iter.next().unwrap_or(0),
-                            ]
-                        };
+                        let mut f: [u8; 4] = Default::default();
+                        for i in 0..4 {
+                            f[i] = iter.next().unwrap_or(0);
+                        }
 
                         match index {
                             1 => players[id].position.x = f32::from_le_bytes(f),

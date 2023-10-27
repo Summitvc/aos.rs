@@ -4,6 +4,7 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+
 use client::*;
 use enet_sys::enet_peer_disconnect_now;
 use packets::*;
@@ -16,11 +17,9 @@ fn main() {
     let mut client = Client::init("aos://1931556250:34869", "Crab".to_owned(), GREEN);
     client.log_chat = true;
     client.log_connections = true;
+    let admin = true;
     let mut authed: bool = false;
     let mut authid: u8 = 0;
-
-    let tg_token = "";
-    let tg_id = 0;
 
     let shared_input = Arc::new(Mutex::new(String::new()));
 
@@ -58,12 +57,13 @@ fn main() {
             shared_input.clear();
         }
 
-        if client.data != vec![0; 0] {
-            // vec![0; 0] instead of just [] because serde(required by telegram lib) requires type annotations
+        if client.data != [] {
             match client.data[0] {
                 STATEDATA => {
                     join(client.peer, client.name.clone(), client.team);
-                    
+                    if admin == true {
+                        // send login 
+                    }
                 }
                 CHATMESSAGE => {
                     let fields = ChatMessage::deserialize(&client.data);
@@ -103,73 +103,75 @@ fn main() {
                                 );
                             }
                         }
-                        "!do" => {
-                            for i in &client.game.players{
-                                if i.connected == true{
-                                    println!("{}, dead: {}", i.name, i.dead);
+                        "!ls" => {
+                            for i in &client.game.players {
+                                if i.connected == true {
+                                    println!("{}: {}", i.playerid, i.name);
                                 }
                             }
                         }
+                        x if x.contains("!tp") => {
+                            let id: u8 = x.split(" ").collect::<Vec<_>>()[1].parse().unwrap();
+                            let target_pos = &client.game.players[id as usize].position;
+                            packets::set_position(
+                                client.peer,
+                                target_pos.x,
+                                target_pos.y,
+                                target_pos.z,
+                            );
+                        }
+                        x if x.contains("!kill") => {
+                                if authid == fields.playerid {
+                                    ChatMessage::send(
+                                        client.peer,
+                                        client.localplayerid,
+                                        CHAT_ALL,
+                                        "/kill".to_owned(),
+                                    );
+                                }
+                            }
                         "!switch" => {
                             if authid == fields.playerid {
                                 let team = client.game.players[client.localplayerid as usize].team;
 
                                 if team == SPECTATOR {
-                                    packets::ChatMessage::send(
-                                        client.peer,
-                                        client.localplayerid,
-                                        CHAT_ALL,
-                                        "Switching team!".to_owned(),
-                                    );
                                     ExtraPackets::change_team(
                                         client.peer,
                                         client.localplayerid,
                                         team + 1,
                                     );
                                 } else if team == BLUE {
-                                    ChatMessage::send(
-                                        client.peer,
-                                        client.localplayerid,
-                                        CHAT_ALL,
-                                        "Switching team!".to_owned(),
-                                    );
                                     ExtraPackets::change_team(
                                         client.peer,
                                         client.localplayerid,
                                         team + 1,
                                     );
                                 } else if team == GREEN {
-                                    ChatMessage::send(
-                                        client.peer,
-                                        client.localplayerid,
-                                        CHAT_ALL,
-                                        "Switching team!".to_owned(),
-                                    );
                                     ExtraPackets::change_team(
                                         client.peer,
                                         client.localplayerid,
                                         team - 2,
                                     );
                                 }
-                            }
-                        }
-                        "!say" => {
-                            ChatMessage::send_lines(
-                                client.peer,
-                                client.localplayerid,
-                                CHAT_ALL,
-                                ["Hello everyone", "Im Crab"].to_vec(),
-                            );
-                        }
-                        "!kill" => {
-                            if authid == fields.playerid {
-                                ChatMessage::send(
+                                packets::ChatMessage::send(
                                     client.peer,
                                     client.localplayerid,
                                     CHAT_ALL,
-                                    "/kill".to_owned(),
+                                    "Switching team!".to_owned(),
                                 );
                             }
+                        }
+                        "!say" => {
+                            let peer = client.peer;
+                            let localplayerid = client.localplayerid;
+
+                            ChatMessage::send_lines(
+                                &mut client,
+                                peer,
+                                localplayerid,
+                                CHAT_ALL,
+                                ["Message 1", "Message 2"].to_vec(),
+                            );
                         }
                         "!leave" => {
                             if authid == fields.playerid {
@@ -179,51 +181,12 @@ fn main() {
                                 }
                             }
                         }
-                        _ => {
-                            let mut filter = client.data.to_vec(); //fix utf8 invalid byte
-                            if client.data[3] == 255 {
-                                filter[3] = 0;
-                            }
-                            if client.data[1] <= 32 {
-                                if client.data[2] == 0 {
-                                    telegram_notifyrs::send_message(
-                                        format!(
-                                            "[Global] #{} {}: {}",
-                                            fields.playerid,
-                                            client.game.players[client.data[1] as usize].name,
-                                            &fields.chatmessage
-                                        ),
-                                        tg_token,
-                                        tg_id,
-                                    );
-                                } else if client.data[2] == 1 {
-                                    telegram_notifyrs::send_message(
-                                        format!(
-                                            "[Team] #{} {}: {}",
-                                            fields.playerid,
-                                            client.game.players[client.data[1] as usize].name,
-                                            &fields.chatmessage
-                                        ),
-                                        tg_token,
-                                        tg_id,
-                                    );
-                                } else {
-                                    telegram_notifyrs::send_message(
-                                        format!("[Server] {}", &fields.chatmessage),
-                                        tg_token,
-                                        tg_id,
-                                    );
-                                }
-                            }
-                        }
+                        "nuke" => unsafe {
+                            enet_peer_disconnect_now(client.peer, 0);
+                            break;
+                        },
+                        _ => {}
                     }
-                }
-                // telegram forwarding
-                CREATEPLAYER => {
-                    // telegram_notifyrs::send_message(format!("{} connected", client.game.players[client.data[1] as usize].name), tg_token, tg_id);
-                }
-                PLAYERLEFT => {
-                    // telegram_notifyrs::send_message(format!("{} disconnected", client.game.players[client.data[1] as usize].name), tg_token, tg_id);
                 }
                 _ => {}
             }
