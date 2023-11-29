@@ -62,7 +62,7 @@ fn main() {
                 STATEDATA => {
                     join(client.peer, client.name.clone(), client.team);
                     if admin == true {
-                        // send login 
+                        //login
                     }
                 }
                 CHATMESSAGE => {
@@ -164,7 +164,6 @@ fn main() {
                         "!say" => {
                             let peer = client.peer;
                             let localplayerid = client.localplayerid;
-
                             ChatMessage::send_lines(
                                 &mut client,
                                 peer,

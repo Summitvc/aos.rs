@@ -137,13 +137,19 @@ pub struct ExtraPackets {}
 
 impl CreatePlayer {
     pub fn deserialize(mut self, players: &mut Vec<Player>, bytes: &[u8]) {
+        let mut filter = bytes.to_vec();
         self.playerid = bytes[1];
         self.weapon = bytes[2];
         self.team = bytes[3] as i8;
         self.x = f32::from_le_bytes(bytes[4..8].try_into().unwrap());
         self.y = f32::from_le_bytes(bytes[8..12].try_into().unwrap());
         self.z = f32::from_le_bytes(bytes[12..16].try_into().unwrap());
-        self.name = String::from_utf8_lossy(&bytes[16..bytes.len() - 1]).to_string();
+
+        //utf
+        if filter[16] == 255{
+            filter[16] = 0;
+        }
+        self.name = String::from_utf8_lossy(&filter[16..bytes.len() - 1]).to_string();
 
         //check if player joined or respawned
         if players[self.playerid as usize].connected != true {
@@ -366,7 +372,9 @@ impl ChatMessage {
         buf.push(CHATMESSAGE);
         buf.push(localplayerid);
         buf.push(chattype);
-        // buf.push(255);
+        
+        // 255 for utf
+        buf.push(255);
         buf.append(&mut message.as_bytes().to_vec());
         buf.push(0);
 
@@ -441,11 +449,15 @@ impl ExistingPlayer {
         buf.push(self.blue);
         buf.push(self.green);
         buf.push(self.red);
+
+        //255 utf indication
+        buf.push(255);
         buf.extend(name.as_bytes());
 
         return buf;
     }
     pub fn deserialize(bytes: &[u8], players: &mut Vec<Player>) {
+        let mut filter = bytes.to_vec();
         //shifted by 1 index to right due to id
         let playerid = bytes[1];
         // let team = bytes[2] as i8;
@@ -455,7 +467,12 @@ impl ExistingPlayer {
         // let blue = bytes[9];
         // let green = bytes[10];
         // let red = bytes[11];
-        let name: String = String::from_utf8_lossy(&bytes[12..]).into_owned();
+        
+        // FITER 255 BYTE OUT 
+        if filter[12] == 255{
+            filter[12] = 0;
+        }
+        let name: String = String::from_utf8_lossy(&filter[12..]).into_owned();
 
         players[playerid as usize].name = name;
         players[playerid as usize].playerid = playerid;
