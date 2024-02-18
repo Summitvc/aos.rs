@@ -146,9 +146,8 @@ impl CreatePlayer {
         self.z = f32::from_le_bytes(bytes[12..16].try_into().unwrap());
 
         //utf
-        if filter[16] == 255{
-            filter[16] = 0;
-        }
+        if filter[16] == 255 { filter[16] = 0 }
+        
         self.name = String::from_utf8_lossy(&filter[16..bytes.len() - 1]).to_string();
 
         //check if player joined or respawned
@@ -372,8 +371,8 @@ impl ChatMessage {
         buf.push(CHATMESSAGE);
         buf.push(localplayerid);
         buf.push(chattype);
-        
-        // 255 for utf
+
+        // 255 to indicate utf-8
         buf.push(255);
         buf.append(&mut message.as_bytes().to_vec());
         buf.push(0);
@@ -467,11 +466,9 @@ impl ExistingPlayer {
         // let blue = bytes[9];
         // let green = bytes[10];
         // let red = bytes[11];
-        
-        // FITER 255 BYTE OUT 
-        if filter[12] == 255{
-            filter[12] = 0;
-        }
+
+        // FITER 255 BYTE OUT
+        if filter[12] == 255 { filter[12] = 0 }
         let name: String = String::from_utf8_lossy(&filter[12..]).into_owned();
 
         players[playerid as usize].name = name;
@@ -510,7 +507,6 @@ impl WorldUpdate {
                         for i in 0..4 {
                             f[i] = iter.next().unwrap_or(0);
                         }
-
                         match index {
                             1 => players[id].position.x = f32::from_le_bytes(f),
                             2 => players[id].position.y = f32::from_le_bytes(f),

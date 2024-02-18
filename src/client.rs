@@ -64,7 +64,7 @@ impl Client {
                 data: 0,
                 packet: &mut packet,
             };
-            let client = enet_host_create(null(), 1, 1, 0, 0);
+            let client = enet_host_create(null(), 1, 2, 0, 0);
             if client.is_null() {
                 panic!("error: client create returned null")
             }

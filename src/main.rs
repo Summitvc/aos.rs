@@ -4,9 +4,8 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-
 use client::*;
-use enet_sys::enet_peer_disconnect_now;
+use enet_sys::{enet_deinitialize, enet_peer_disconnect_now};
 use packets::*;
 
 mod client;
@@ -14,10 +13,10 @@ mod packets;
 mod utils;
 
 fn main() {
-    let mut client = Client::init("aos://1931556250:34869", "Crab".to_owned(), GREEN);
+    let mut client = Client::init("aos://3782433610:32000", "Crab".to_owned(), GREEN);
     client.log_chat = true;
     client.log_connections = true;
-    let admin = true;
+    let admin = false;
     let mut authed: bool = false;
     let mut authid: u8 = 0;
 
@@ -62,7 +61,12 @@ fn main() {
                 STATEDATA => {
                     join(client.peer, client.name.clone(), client.team);
                     if admin == true {
-                        //login
+                        packets::ChatMessage::send(
+                            client.peer,
+                            client.localplayerid,
+                            CHAT_ALL,
+                            "/login password".to_owned(),
+                        )
                     }
                 }
                 CHATMESSAGE => {
@@ -121,15 +125,15 @@ fn main() {
                             );
                         }
                         x if x.contains("!kill") => {
-                                if authid == fields.playerid {
-                                    ChatMessage::send(
-                                        client.peer,
-                                        client.localplayerid,
-                                        CHAT_ALL,
-                                        "/kill".to_owned(),
-                                    );
-                                }
+                            if authid == fields.playerid {
+                                ChatMessage::send(
+                                    client.peer,
+                                    client.localplayerid,
+                                    CHAT_ALL,
+                                    "/kill".to_owned(),
+                                );
                             }
+                        }
                         "!switch" => {
                             if authid == fields.playerid {
                                 let team = client.game.players[client.localplayerid as usize].team;
@@ -172,18 +176,18 @@ fn main() {
                                 ["Message 1", "Message 2"].to_vec(),
                             );
                         }
+                        "!ww" => {
+                            send(client.peer, [7, client.localplayerid, 0].to_vec());
+                        }
                         "!leave" => {
                             if authid == fields.playerid {
                                 unsafe {
                                     enet_peer_disconnect_now(client.peer, 0);
+                                    enet_deinitialize();
                                     break;
                                 }
                             }
                         }
-                        "nuke" => unsafe {
-                            enet_peer_disconnect_now(client.peer, 0);
-                            break;
-                        },
                         _ => {}
                     }
                 }
