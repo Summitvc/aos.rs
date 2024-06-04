@@ -79,13 +79,7 @@ impl Client {
             }
 
             let players: Vec<Player> = vec![Default::default(); 32];
-            let game = Game { players };
-            let data = Vec::new();
-            let statedata: StateData = Default::default();
-            let localplayerid = 0;
-            let log_chat = false;
-            let log_connections = false;
-
+            
             println!("Connecting...");
 
             Client {
@@ -93,14 +87,14 @@ impl Client {
                 peer,
                 event,
                 packet,
-                game,
+                game: Game { players },
                 name,
-                localplayerid,
+                localplayerid: 0,
                 team,
-                data,
-                statedata,
-                log_chat,
-                log_connections,
+                data: Vec::new(),
+                statedata: Default::default(),
+                log_chat: false,
+                log_connections: false,
             }
         }
     }
@@ -120,6 +114,7 @@ impl Client {
                             STATEDATA => {
                                 StateData::deserialize(
                                     &mut self.statedata,
+                                    &mut self.game.players,
                                     &mut self.localplayerid,
                                     data,
                                 );

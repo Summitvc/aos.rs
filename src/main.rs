@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use client::*;
 use enet_sys::{enet_deinitialize, enet_peer_disconnect_now};
@@ -12,11 +13,14 @@ mod client;
 mod packets;
 mod utils;
 
+use std::fs::File;
+use std::io::prelude::*;
+
 fn main() {
-    let mut client = Client::init("aos://3782433610:32000", "Crab".to_owned(), GREEN);
+    let mut client = Client::init("aos://2651216541:32887", "Deuce".to_owned(), GREEN);
     client.log_chat = true;
     client.log_connections = true;
-    let admin = false;
+
     let mut authed: bool = false;
     let mut authid: u8 = 0;
 
@@ -60,14 +64,6 @@ fn main() {
             match client.data[0] {
                 STATEDATA => {
                     join(client.peer, client.name.clone(), client.team);
-                    if admin == true {
-                        packets::ChatMessage::send(
-                            client.peer,
-                            client.localplayerid,
-                            CHAT_ALL,
-                            "/login password".to_owned(),
-                        )
-                    }
                 }
                 CHATMESSAGE => {
                     let fields = ChatMessage::deserialize(&client.data);
@@ -113,6 +109,51 @@ fn main() {
                                     println!("{}: {}", i.playerid, i.name);
                                 }
                             }
+                        }
+                        "!get" => {
+                                for i in client.game.players.clone() {
+                                    if i.connected == true {
+                                        let message = format!("/client #{}", i.playerid);
+                                        let mut g = true; 
+                                
+                                        let (tx, rx) = mpsc::channel();
+                                        loop {
+                                            if g == true {
+                                                ChatMessage::send(client.peer, client.localplayerid, CHAT_ALL, message.to_owned());
+                                
+                                                let tx_clone = tx.clone();
+                                
+                                                thread::spawn(move || {
+                                                    thread::sleep(Duration::from_secs(2));
+                                                    tx_clone.send(()).unwrap();
+                                                });
+                                            }
+                                            g = false;
+                                            client.service();
+                                            if client.data != [] {
+                                                match client.data[0] {
+                                                    CHATMESSAGE => {
+                                                        let fields = ChatMessage::deserialize(&client.data);
+                                                        match fields.chatmessage.as_str() {
+                                                            x if x.contains("connected with") => {
+                                                            let mut cl: String = x.to_string();
+                                                            cl.push_str("\n");
+                                                                let mut file = File::options().append(true).create(true).open("clients.txt").unwrap();
+                                                                file.write_all(cl.as_bytes()).unwrap();
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                
+                                            if let Ok(()) = rx.try_recv() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
                         }
                         x if x.contains("!tp") => {
                             let id: u8 = x.split(" ").collect::<Vec<_>>()[1].parse().unwrap();
@@ -180,7 +221,7 @@ fn main() {
                             send(client.peer, [7, client.localplayerid, 0].to_vec());
                         }
                         "!leave" => {
-                            if authid == fields.playerid {
+                            if fields.playerid == client.game.players[client.localplayerid as usize].playerid {
                                 unsafe {
                                     enet_peer_disconnect_now(client.peer, 0);
                                     enet_deinitialize();

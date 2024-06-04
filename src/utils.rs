@@ -1,4 +1,6 @@
-use std::fmt::Error;
+use std::{fmt::Error, sync::mpsc, thread, time::Duration};
+
+use crate::Client;
 
 pub fn ip(address: &str) -> Result<Vec<String>, Error> {
     if !address.starts_with("aos://") {

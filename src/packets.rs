@@ -344,12 +344,13 @@ pub fn join(peer: *mut _ENetPeer, name: String, team: i8) {
 }
 
 impl StateData {
-    pub fn deserialize(&mut self, localplayerid: &mut u8, bytes: &[u8]) {
+    pub fn deserialize(&mut self, players: &mut Vec<Player>, localplayerid: &mut u8, bytes: &[u8]) {
         let mut buf: Vec<u8> = bytes.to_vec();
 
         buf.remove(0);
 
         *localplayerid = buf[0];
+        players[buf[0] as usize].playerid = buf[0];
         self.fog_b = buf[1];
         self.fog_g = buf[2];
         self.fog_r = buf[3];
@@ -379,13 +380,7 @@ impl ChatMessage {
 
         send(peer, buf);
     }
-    pub fn send_lines(
-        client: &mut Client,
-        peer: *mut _ENetPeer,
-        localplayerid: u8,
-        chattype: u8,
-        lines: Vec<&str>,
-    ) {
+    pub fn send_lines(client: &mut Client, peer: *mut _ENetPeer, localplayerid: u8, chattype: u8, lines: Vec<&str>) {
         let mut g = true; // toggle sending
         let mut k = 0; // counter
         let mut a = lines.iter();
@@ -415,10 +410,9 @@ impl ChatMessage {
         }
     }
     pub fn deserialize(bytes: &[u8]) -> ChatMessage {
-        let mut buf = bytes[3..bytes.len() - 1].to_vec();
-
-        // 255 is an identification byte in the chat message packet which tells wether the text is encoded using cp437 or utf-8
-        if buf[0] == 255 {
+        let mut buf = bytes[3..bytes.len()-1].to_vec();
+        
+        if buf.len() > 0 && buf[0] == 255 {
             buf[0] = 0;
             ChatMessage {
                 playerid: bytes[1],
@@ -514,7 +508,7 @@ impl WorldUpdate {
                             4 => players[id].orientation.x = f32::from_le_bytes(f),
                             5 => players[id].orientation.y = f32::from_le_bytes(f),
                             6 => players[id].orientation.z = f32::from_le_bytes(f),
-                            _ => println!("error at matching index at worldupdate::deserialize()"),
+                            _ => panic!("error at matching index at worldupdate::deserialize()"),
                         }
                         index += 1;
                     }
