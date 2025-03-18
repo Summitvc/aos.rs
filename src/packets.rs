@@ -1,8 +1,10 @@
 use std::thread;
 use std::time::{self, Duration};
 
-use codepage_437::{FromCp437, CP437_WINGDINGS};
+use codepage_437::{CP437_WINGDINGS, FromCp437};
 use enet_sys::*;
+
+use bit_vec::BitVec;
 
 use std::sync::mpsc;
 
@@ -20,13 +22,17 @@ pub const HANDSHAKE_INIT: u8 = 31;
 pub const HANDSHAKE_RETURN: u8 = 32;
 pub const VERSION_REQ: u8 = 33;
 pub const VERSION_RESP: u8 = 34;
-// pub const MAPSTART: u8 = 18;
-// pub const MAPCHUNK: u8 = 19;
-// pub const MAPCACHED: u8 = 31;
+pub const MAPSTART: u8 = 18;
+pub const MAPCHUNK: u8 = 19;
+pub const MAPCACHED: u8 = 31;
 
 pub const CHAT_ALL: u8 = 0;
 pub const CHAT_TEAM: u8 = 1;
 pub const CHAT_SYSTEM: u8 = 2;
+
+pub const X_SIZE: i32 = 512;
+pub const Y_SIZE: i32 = 512;
+pub const Z_SIZE: i32 = 64;
 
 #[derive(Clone, Debug, Default)]
 pub struct Coordinates {
@@ -133,22 +139,31 @@ pub struct VersionInfo {
     pub operating_system_info: String,
 }
 
+#[derive(Default, Clone)]
+pub struct WorldMap {
+    pub data: Vec<u8>,
+    pub blocks: BitVec,
+    pub colors: Vec<Vec<Vec<Color>>>,
+}
+
 pub struct ExtraPackets {}
 
 impl CreatePlayer {
-    pub fn deserialize(mut self, players: &mut Vec<Player>, bytes: &[u8]) {
-        let mut filter = bytes.to_vec();
-        self.playerid = bytes[1];
-        self.weapon = bytes[2];
-        self.team = bytes[3] as i8;
-        self.x = f32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        self.y = f32::from_le_bytes(bytes[8..12].try_into().unwrap());
-        self.z = f32::from_le_bytes(bytes[12..16].try_into().unwrap());
+    pub fn deserialize(mut self, players: &mut Vec<Player>, data: &[u8]) {
+        let mut filter = data.to_vec();
+        self.playerid = data[1];
+        self.weapon = data[2];
+        self.team = data[3] as i8;
+        self.x = f32::from_le_bytes(data[4..8].try_into().unwrap());
+        self.y = f32::from_le_bytes(data[8..12].try_into().unwrap());
+        self.z = f32::from_le_bytes(data[12..16].try_into().unwrap());
 
         //utf
-        if filter[16] == 255 { filter[16] = 0 }
-        
-        self.name = String::from_utf8_lossy(&filter[16..bytes.len() - 1]).to_string();
+        if filter[16] == 255 {
+            filter[16] = 0
+        }
+
+        self.name = String::from_utf8_lossy(&filter[16..data.len() - 1]).to_string();
 
         //check if player joined or respawned
         if players[self.playerid as usize].connected != true {
@@ -312,24 +327,24 @@ impl ExtraPackets {
 }
 
 impl KillAction {
-    pub fn deserialize(mut self, players: &mut Vec<Player>, bytes: &[u8]) {
-        self.playerid = bytes[1];
-        self.killerid = bytes[2];
-        self.killtype = bytes[3];
-        self.respawntime = bytes[4];
+    pub fn deserialize(mut self, players: &mut Vec<Player>, data: &[u8]) {
+        self.playerid = data[1];
+        self.killerid = data[2];
+        self.killtype = data[3];
+        self.respawntime = data[4];
 
         players[self.playerid as usize].dead = true;
         players[self.killerid as usize].kills += 1;
     }
 }
 
-pub fn send(peer: *mut _ENetPeer, bytes: Vec<u8>) {
-    let buf_ptr: *const _ = bytes.as_ptr() as *mut _;
+pub fn send(peer: *mut _ENetPeer, data: Vec<u8>) {
+    let buf_ptr: *const _ = data.as_ptr() as *mut _;
 
     unsafe {
         let new_packet = enet_packet_create(
             buf_ptr,
-            bytes.len() as usize,
+            data.len() as usize,
             _ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE,
         );
 
@@ -344,8 +359,8 @@ pub fn join(peer: *mut _ENetPeer, name: String, team: i8) {
 }
 
 impl StateData {
-    pub fn deserialize(&mut self, players: &mut Vec<Player>, localplayerid: &mut u8, bytes: &[u8]) {
-        let mut buf: Vec<u8> = bytes.to_vec();
+    pub fn deserialize(&mut self, players: &mut Vec<Player>, localplayerid: &mut u8, data: &[u8]) {
+        let mut buf: Vec<u8> = data.to_vec();
 
         buf.remove(0);
 
@@ -380,7 +395,13 @@ impl ChatMessage {
 
         send(peer, buf);
     }
-    pub fn send_lines(client: &mut Client, peer: *mut _ENetPeer, localplayerid: u8, chattype: u8, lines: Vec<&str>) {
+    pub fn send_lines(
+        client: &mut Client,
+        peer: *mut _ENetPeer,
+        localplayerid: u8,
+        chattype: u8,
+        lines: Vec<&str>,
+    ) {
         let mut g = true; // toggle sending
         let mut k = 0; // counter
         let mut a = lines.iter();
@@ -409,20 +430,20 @@ impl ChatMessage {
             }
         }
     }
-    pub fn deserialize(bytes: &[u8]) -> ChatMessage {
-        let mut buf = bytes[3..bytes.len()-1].to_vec();
-        
+    pub fn deserialize(data: &[u8]) -> ChatMessage {
+        let mut buf = data[3..data.len() - 1].to_vec();
+
         if buf.len() > 0 && buf[0] == 255 {
             buf[0] = 0;
             ChatMessage {
-                playerid: bytes[1],
-                chattype: bytes[2],
+                playerid: data[1],
+                chattype: data[2],
                 chatmessage: String::from_utf8_lossy(&buf).to_string(),
             }
         } else {
             ChatMessage {
-                playerid: bytes[1],
-                chattype: bytes[2],
+                playerid: data[1],
+                chattype: data[2],
                 chatmessage: String::from_cp437(buf, &CP437_WINGDINGS),
             }
         }
@@ -449,20 +470,22 @@ impl ExistingPlayer {
 
         return buf;
     }
-    pub fn deserialize(bytes: &[u8], players: &mut Vec<Player>) {
-        let mut filter = bytes.to_vec();
+    pub fn deserialize(data: &[u8], players: &mut Vec<Player>) {
+        let mut filter = data.to_vec();
         //shifted by 1 index to right due to id
-        let playerid = bytes[1];
+        let playerid = data[1];
         // let team = bytes[2] as i8;
-        let weapon = bytes[3];
+        let weapon = data[3];
         // let helditem = bytes[4];
-        let kills = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
+        let kills = u32::from_le_bytes(data[5..9].try_into().unwrap());
         // let blue = bytes[9];
         // let green = bytes[10];
         // let red = bytes[11];
 
         // FITER 255 BYTE OUT
-        if filter[12] == 255 { filter[12] = 0 }
+        if filter[12] == 255 {
+            filter[12] = 0
+        }
         let name: String = String::from_utf8_lossy(&filter[12..]).into_owned();
 
         players[playerid as usize].name = name;
@@ -483,13 +506,100 @@ pub struct WorldUpdate {
     // oriz: f32,
 }
 
+impl WorldMap {
+    pub fn get_top_block(x: i32, y: i32, map: &mut WorldMap) -> u8 {
+        for i in 0..Z_SIZE {
+            let block = map
+                .blocks
+                .get((x + y * X_SIZE + i * X_SIZE * Y_SIZE) as usize)
+                .unwrap();
+            if block == true {
+                return i as u8;
+            }
+        }
+        return 63;
+    }
+
+    pub fn setgeom(x: i32, y: i32, z: i32, t: bool, map: &mut WorldMap) {
+        assert!(z >= 0 && z < Z_SIZE);
+        map.blocks
+            .set((x + y * X_SIZE + z * X_SIZE * Y_SIZE) as usize, t);
+    }
+
+    pub fn setcolor(x: i32, y: i32, z: i32, c: Color, map: &mut WorldMap) {
+        assert!(z >= 0 && z < Z_SIZE);
+        map.colors[x as usize][y as usize][z as usize] = c;
+    }
+
+    pub fn deserialize(map: &mut WorldMap) {
+        let base: Vec<u8> = map.data.clone();
+
+        let mut offset: i32 = 0;
+
+        for y in 0..Y_SIZE {
+            for x in 0..X_SIZE {
+                for z in 0..Z_SIZE {
+                    WorldMap::setgeom(x, y, z, true, map);
+                }
+                let mut z = 0;
+                loop {
+                    let number_4byte_chunks: i32 = base[offset as usize].into();
+                    let top_color_start: i32 = base[offset as usize + 1].into();
+                    let top_color_end: i32 = base[offset as usize + 2].into();
+
+                    for i in z..top_color_start {
+                        WorldMap::setgeom(x, y, i, false, map);
+                    }
+
+                    let mut color_offset: usize = offset as usize + 4;
+                    for i in top_color_start..=top_color_end {
+                        let c: Color = Color {
+                            red: base[color_offset + 2],
+                            green: base[color_offset + 1],
+                            blue: base[color_offset + 0],
+                        };
+
+                        WorldMap::setcolor(x, y, i, c, map);
+                        color_offset += 4;
+                    }
+
+                    let len_bottom = top_color_end - top_color_start + 1;
+
+                    if number_4byte_chunks == 0 {
+                        offset += 4 * (len_bottom + 1);
+                        break;
+                    }
+
+                    let len_top = (number_4byte_chunks - 1) - len_bottom;
+                    offset += base[offset as usize] as i32 * 4;
+
+                    let bottom_color_end: i32 = base[offset as usize + 3] as i32;
+                    let bottom_color_start = bottom_color_end - len_top;
+
+                    for i in bottom_color_start..bottom_color_end {
+                        let c: Color = Color {
+                            red: base[color_offset + 2],
+                            green: base[color_offset + 1],
+                            blue: base[color_offset + 0],
+                        };
+
+                        WorldMap::setcolor(x, y, i, c, map);
+                        color_offset += 4;
+                    }
+                    z = bottom_color_end;
+                }
+            }
+        }
+    }
+}
+
 impl WorldUpdate {
-    pub fn deserialize(bytes: &[u8], players: &mut Vec<Player>) {
+    pub fn deserialize(data: &[u8], players: &mut Vec<Player>) {
         let mut id = 0;
         let mut index = 1;
         let mut buf: Vec<u8> = Vec::new();
 
-        if let Some((_, remaining)) = bytes.split_first() {
+        if let Some((_, remaining)) = data.split_first() {
             for item in remaining {
                 buf.push(*item);
                 if buf.len() == 24 {

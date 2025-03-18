@@ -3,10 +3,14 @@ use crate::packets::*;
 use crate::utils;
 
 use std::ffi::CString;
+use std::io::Read;
 use std::ptr::{null, null_mut};
 
+use enet_sys::enet_initialize;
 use enet_sys::*;
-use enet_sys::{self, enet_initialize};
+
+use bit_vec::BitVec;
+use flate2::read::ZlibDecoder;
 
 use colored::Colorize;
 
@@ -17,6 +21,7 @@ pub const GREEN: i8 = 1;
 #[derive(Clone)]
 pub struct Game {
     pub players: Vec<Player>,
+    pub map: WorldMap,
 }
 
 #[derive(Clone)]
@@ -79,7 +84,13 @@ impl Client {
             }
 
             let players: Vec<Player> = vec![Default::default(); 32];
-            
+
+            let map = WorldMap {
+                data: Vec::new(),
+                blocks: BitVec::from_elem((X_SIZE * Y_SIZE * Z_SIZE) as usize, false),
+                colors: vec![vec![vec![Color::default(); Z_SIZE as usize]; Y_SIZE as usize]; X_SIZE as usize],
+            };
+
             println!("Connecting...");
 
             Client {
@@ -87,7 +98,7 @@ impl Client {
                 peer,
                 event,
                 packet,
-                game: Game { players },
+                game: Game { players, map },
                 name,
                 localplayerid: 0,
                 team,
@@ -111,7 +122,23 @@ impl Client {
                             (*self.event.packet).dataLength as usize,
                         );
                         match data[0] {
+                            MAPSTART => {
+                                self.game.map.data = Vec::new();
+                                self.game.map.blocks = BitVec::from_elem((X_SIZE * Y_SIZE * Z_SIZE) as usize, false);
+                                self.game.map.colors = vec![vec![vec![Color::default(); Z_SIZE as usize]; Y_SIZE as usize]; X_SIZE as usize];
+                            }
+                            MAPCHUNK => {
+                                self.game.map.data.append(&mut data[1..].to_vec());
+                            }
                             STATEDATA => {
+                                let mut d = ZlibDecoder::new(self.game.map.data.as_slice());
+                                let mut buf: Vec<u8> = Vec::new();
+                                d.read_to_end(buf.as_mut()).unwrap();
+                                self.game.map.data.clear();
+                                self.game.map.data = buf;
+
+                                WorldMap::deserialize(&mut self.game.map);
+
                                 StateData::deserialize(
                                     &mut self.statedata,
                                     &mut self.game.players,
